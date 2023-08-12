@@ -25,3 +25,9 @@ vendor/
 
 # Coverage
 coverage.txt
+
+
+# Infrastructure
+infra/dist
+infra/node_modules
+build
