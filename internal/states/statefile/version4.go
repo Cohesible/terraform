@@ -396,22 +396,24 @@ func writeStateV4(file *File, w io.Writer) tfdiags.Diagnostics {
 			})
 			rsV4 := &(sV4.Resources[len(sV4.Resources)-1])
 
-			for key, is := range rs.Instances {
-				if is.HasCurrent() {
-					var objDiags tfdiags.Diagnostics
-					rsV4.Instances, objDiags = appendInstanceObjectStateV4(
-						rs, is, key, is.Current, states.NotDeposed,
-						rsV4.Instances,
-					)
-					diags = diags.Append(objDiags)
-				}
-				for dk, obj := range is.Deposed {
-					var objDiags tfdiags.Diagnostics
-					rsV4.Instances, objDiags = appendInstanceObjectStateV4(
-						rs, is, key, obj, dk,
-						rsV4.Instances,
-					)
-					diags = diags.Append(objDiags)
+			if mode != "data" {
+				for key, is := range rs.Instances {
+					if is.HasCurrent() {
+						var objDiags tfdiags.Diagnostics
+						rsV4.Instances, objDiags = appendInstanceObjectStateV4(
+							rs, is, key, is.Current, states.NotDeposed,
+							rsV4.Instances,
+						)
+						diags = diags.Append(objDiags)
+					}
+					for dk, obj := range is.Deposed {
+						var objDiags tfdiags.Diagnostics
+						rsV4.Instances, objDiags = appendInstanceObjectStateV4(
+							rs, is, key, obj, dk,
+							rsV4.Instances,
+						)
+						diags = diags.Append(objDiags)
+					}
 				}
 			}
 		}
