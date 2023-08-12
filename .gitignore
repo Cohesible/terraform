@@ -28,6 +28,7 @@ coverage.txt
 
 
 # Infrastructure
+dist
 infra/dist
 infra/node_modules
 build

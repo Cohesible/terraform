@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
-import * as http from 'node:http'
+import * as http from 'node:https'
 import * as cloudLib from 'cloudscript-runtime/lib'
 import * as resources from 'cloudscript-resources'
 import { runCommand, Key } from 'signing'
@@ -187,6 +187,7 @@ interface ReleaseMetadata {
 interface ReleaseOptions {
     githubToken?: string
     goReleaserPath?: string
+    projectDir?: string
 }
 
 async function getGoPath() {
@@ -235,9 +236,11 @@ export function createReleaser(
         const args = process.env['USE_SNAPSHOT']
             ? ['release', '--snapshot', '--clean']
             : ['release', '--clean']
-    
+
+        const rootdir = opt?.projectDir ?? process.cwd()
         const goReleaserPath = opt?.goReleaserPath ?? await getOrInstallGoReleaser()
         await runCommand(goReleaserPath, args, {
+            cwd: rootdir,
             env: {
                 ...process.env,
                 GITHUB_TOKEN: opt?.githubToken ?? process.env['GITHUB_TOKEN'],
@@ -245,7 +248,7 @@ export function createReleaser(
             }
         })
     
-        const rootdir = process.cwd()
+
         const outdir = path.resolve(rootdir, 'dist')
         const artifacts = await getArtifacts(outdir)
         const metadata = await getMetadata(outdir)
@@ -311,13 +314,14 @@ bindObjectModel(myUserClient, {
 const namespace = 'cohesible'
 const type = 'terraform'
 
-export async function main() {
+export async function main(projectDir?: string) {
     const resp = await myUserClient.createScopedAccessToken({
         repositories: ['terraform'],
         permissions: { contents: 'write' },
     })
 
     return release(namespace, type, {
+        projectDir,
         githubToken: resp.token,
     })
 }
@@ -392,7 +396,11 @@ export async function streamFile(url: string, dest: string) {
     return new Promise<void>((resolve, reject) => {
         const req = http.get(url, res => {
             const pipe = res.pipe(handle.createWriteStream())
-            pipe.on('end', resolve)
+            res.on('end', async () => {
+                await handle.close().catch(reject)
+                resolve()
+            })
+            res.on('error', reject)
             pipe.on('error', reject)
         })
 
