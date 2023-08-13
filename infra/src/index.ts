@@ -377,17 +377,21 @@ export async function getDownloadUrl(opt: { version?: string; os?: Goos; arch?: 
         throw new Error(`No release found for combination: (os: ${os}; arch: ${arch}; version: ${version})`)
     }
 
+    const foundVersion = matches[0].version
     const metadata = await getReleaseMetadata({
         pathParameters: {
             type,
             namespace,
             os,
             arch,
-            version: matches[0].version
+            version: foundVersion,
         }
     })
 
-    return metadata.download_url
+    return {
+        url: metadata.download_url,
+        version: foundVersion,
+    }
 }
 
 export async function streamFile(url: string, dest: string) {
@@ -407,3 +411,37 @@ export async function streamFile(url: string, dest: string) {
         req.on('error', reject)
     })
 }
+
+export async function getOrInstallTerraform(dir: string) {
+    const info = await getDownloadUrl()
+    const binaryName = `terraform_v${info.version}`
+    const dest = path.resolve(dir, '.cloudscript', 'terraform', info.version, binaryName)
+    const alreadyInstalled = await fs.access(dest, fs.constants.F_OK | fs.constants.X_OK).then(() => true, () => false)
+    if (alreadyInstalled) {
+        return {
+            version: info.version,
+            path: dest,
+        }
+    }
+
+    const zipDest = path.resolve(dir, '.cloudscript', 'terraform.zip')
+    await fs.mkdir(path.dirname(zipDest), { recursive: true })
+    await streamFile(info.url, zipDest)
+
+    try {
+        await fs.mkdir(path.dirname(dest), { recursive: true })
+        await runCommand('unzip', [zipDest, binaryName, '-d', path.dirname(dest)])
+    } finally {
+        await fs.unlink(zipDest).catch(e => {
+            if ((e as any).code !== 'ENOENT') {
+                throw e
+            }
+        })
+    }
+
+    return {
+        version: info.version,
+        path: dest,
+    }
+}
+
