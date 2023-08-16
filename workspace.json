@@ -1,4 +1,7 @@
 {
     "id": "terraform",
-    "defaultBranch": "main"
+    "defaultBranch": "main",
+    "deployOptions": {
+        "backend": "/Users/jadensimon/Projects/cloud-compiler/services/@cloudscript/state-management/src/index.ts"
+    }
 }
