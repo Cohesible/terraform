@@ -316,7 +316,7 @@ const type = 'terraform'
 
 export async function main(projectDir?: string) {
     const resp = await myUserClient.createScopedAccessToken({
-        repositories: ['terraform'],
+        repositories: ['cs-terraform'],
         permissions: { contents: 'write' },
     })
 
