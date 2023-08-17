@@ -376,7 +376,8 @@ func writeStateV4(file *File, w io.Writer) tfdiags.Diagnostics {
 			case addrs.ManagedResourceMode:
 				mode = "managed"
 			case addrs.DataResourceMode:
-				mode = "data"
+				// Don't add data sources to the state
+				continue
 			default:
 				diags = diags.Append(tfdiags.Sourceless(
 					tfdiags.Error,
@@ -396,24 +397,22 @@ func writeStateV4(file *File, w io.Writer) tfdiags.Diagnostics {
 			})
 			rsV4 := &(sV4.Resources[len(sV4.Resources)-1])
 
-			if mode != "data" {
-				for key, is := range rs.Instances {
-					if is.HasCurrent() {
-						var objDiags tfdiags.Diagnostics
-						rsV4.Instances, objDiags = appendInstanceObjectStateV4(
-							rs, is, key, is.Current, states.NotDeposed,
-							rsV4.Instances,
-						)
-						diags = diags.Append(objDiags)
-					}
-					for dk, obj := range is.Deposed {
-						var objDiags tfdiags.Diagnostics
-						rsV4.Instances, objDiags = appendInstanceObjectStateV4(
-							rs, is, key, obj, dk,
-							rsV4.Instances,
-						)
-						diags = diags.Append(objDiags)
-					}
+			for key, is := range rs.Instances {
+				if is.HasCurrent() {
+					var objDiags tfdiags.Diagnostics
+					rsV4.Instances, objDiags = appendInstanceObjectStateV4(
+						rs, is, key, is.Current, states.NotDeposed,
+						rsV4.Instances,
+					)
+					diags = diags.Append(objDiags)
+				}
+				for dk, obj := range is.Deposed {
+					var objDiags tfdiags.Diagnostics
+					rsV4.Instances, objDiags = appendInstanceObjectStateV4(
+						rs, is, key, obj, dk,
+						rsV4.Instances,
+					)
+					diags = diags.Append(objDiags)
 				}
 			}
 		}
@@ -470,9 +469,14 @@ func appendInstanceObjectStateV4(rs *states.Resource, is *states.ResourceInstanc
 		privateRaw = obj.Private
 	}
 
-	deps := make([]string, len(obj.Dependencies))
-	for i, depAddr := range obj.Dependencies {
-		deps[i] = depAddr.String()
+	var deps []string
+	for _, depAddr := range obj.Dependencies {
+		// Skip adding data sources to the dependencies
+		if depAddr.Resource.Mode == addrs.DataResourceMode {
+			continue
+		}
+
+		deps = append(deps, depAddr.String())
 	}
 
 	var rawKey interface{}
