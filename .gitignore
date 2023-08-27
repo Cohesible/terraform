@@ -32,3 +32,4 @@ dist
 infra/dist
 infra/node_modules
 build
+.cloudscript

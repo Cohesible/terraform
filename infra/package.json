@@ -1,23 +1,23 @@
 {
-  "name": "scaffolding-infra",
-  "dependencies": {
-    "@aws-sdk/client-s3": "^3.360.0",
-    "@cohesible/domains": "file:../../cloud-compiler/services/@cohesible/domains",
-    "cloudscript-resources": "file:../../cloud-compiler/cloudscript-resources",
-    "cloudscript-runtime": "file:../../cloud-compiler/cloudscript-runtime",
-    "scaffolding-constructs": "file:../../cloud-compiler/terraform/scaffolding",
-    "signing": "file:../../cloud-compiler/services/signing",
-    "test-runner": "file:../../cloud-compiler/services/test-runner"
-  },
-  "devDependencies": {
-    "cloudscript": "file:../../cloud-compiler",
-    "typescript": "^4.9.5"
-  },
-  "scripts": {
-    "compile": "csc compile src/index.ts --target aws --generate-exports --id-prefix terraform",
-    "deploy": "csc deploy src/index.ts",
-    "destroy": "csc destroy src/index.ts",
-    "plan": "csc plan src/index.ts",
-    "repl": "csc repl src/index.ts"
-  }
+    "name": "@cloudscript/terraform",
+    "version": "0.0.1",
+    "dependencies": {
+        "@aws-sdk/client-s3": "^3.360.0",
+        "@cloudscript/resources": "file:../../cloud-compiler/services/@cloudscript/resources",
+        "@cloudscript/runtime": "file:../../cloud-compiler/services/@cloudscript/runtime",
+        "@cloudscript/signing": "file:../../cloud-compiler/services/@cloudscript/signing",
+        "@cohesible/domains": "file:../../cloud-compiler/services/@cohesible/domains",
+        "test-runner": "file:../../cloud-compiler/services/test-runner"
+    },
+    "devDependencies": {
+        "cloudscript": "file:../../cloud-compiler",
+        "typescript": "^4.9.5"
+    },
+    "scripts": {
+        "compile": "csc compile src/index.ts --target aws --generate-exports --id-prefix terraform",
+        "deploy": "csc deploy src/index.ts",
+        "destroy": "csc destroy src/index.ts",
+        "plan": "csc plan src/index.ts",
+        "repl": "csc repl src/index.ts"
+    }
 }

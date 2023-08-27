@@ -1,10 +1,10 @@
 import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
 import * as http from 'node:https'
-import * as cloudLib from 'cloudscript-runtime/lib'
-import * as resources from 'cloudscript-resources'
-import { runCommand, Key } from 'signing'
-import { bindFunctionModel, bindObjectModel } from 'cloudscript-runtime'
+import * as cloudLib from '@cloudscript/runtime/lib'
+import * as resources from '@cloudscript/resources'
+import { runCommand, Key } from '@cloudscript/signing'
+import { bindFunctionModel, bindObjectModel } from '@cloudscript/runtime'
 import { myUserClient, userClientPermissions } from 'test-runner/app'
 
 // const downloadDomain = domains.cohesible.createSubdomain('download')
@@ -377,7 +377,7 @@ export async function getDownloadUrl(opt: { version?: string; os?: Goos; arch?: 
         throw new Error(`No release found for combination: (os: ${os}; arch: ${arch}; version: ${version})`)
     }
 
-    const foundVersion = matches[0].version
+    const foundVersion = matches[matches.length - 1].version
     const metadata = await getReleaseMetadata({
         pathParameters: {
             type,
@@ -387,6 +387,8 @@ export async function getDownloadUrl(opt: { version?: string; os?: Goos; arch?: 
             version: foundVersion,
         }
     })
+
+    // TODO: add logic to check signature and whatnot. Needs to be _after_ we download of course
 
     return {
         url: metadata.download_url,
