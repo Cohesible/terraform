@@ -6,8 +6,8 @@
         "@cloudscript/resources": "file:../../cloud-compiler/services/@cloudscript/resources",
         "@cloudscript/runtime": "file:../../cloud-compiler/services/@cloudscript/runtime",
         "@cloudscript/signing": "file:../../cloud-compiler/services/@cloudscript/signing",
-        "@cohesible/domains": "file:../../cloud-compiler/services/@cohesible/domains",
-        "test-runner": "file:../../cloud-compiler/services/test-runner"
+        "@cloudscript/test-runner": "file:../../cloud-compiler/services/@cloudscript/test-runner",
+        "@cohesible/domains": "file:../../cloud-compiler/services/@cohesible/domains"
     },
     "devDependencies": {
         "cloudscript": "file:../../cloud-compiler",

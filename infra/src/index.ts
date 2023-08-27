@@ -5,7 +5,7 @@ import * as cloudLib from '@cloudscript/runtime/lib'
 import * as resources from '@cloudscript/resources'
 import { runCommand, Key } from '@cloudscript/signing'
 import { bindFunctionModel, bindObjectModel } from '@cloudscript/runtime'
-import { myUserClient, userClientPermissions } from 'test-runner/app'
+import { myUserClient, userClientPermissions } from '@cloudscript/test-runner/app'
 
 // const downloadDomain = domains.cohesible.createSubdomain('download')
 const bucket = new resources.BlobStore()
