@@ -10,6 +10,7 @@
         "@cohesible/domains": "file:../../cloud-compiler/services/@cohesible/domains"
     },
     "devDependencies": {
+        "@cloudscript/state-management": "^0.0.37",
         "cloudscript": "file:../../cloud-compiler",
         "typescript": "^4.9.5"
     },

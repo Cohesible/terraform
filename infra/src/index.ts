@@ -218,7 +218,7 @@ export async function getOrInstallGoReleaser() {
     }
 }
 
-const keyBucket = new resources.Bucket
+const keyBucket = new resources.Bucket()
 const signingKey = new Key({
     keyBucket,
     name: 'release',
