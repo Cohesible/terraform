@@ -409,6 +409,12 @@ func initCommands(
 				},
 			}, nil
 		},
+
+		"start-session": func() (cli.Command, error) {
+			return &command.StartSessionCommand{
+				Meta: meta,
+			}, nil
+		},
 	}
 
 	PrimaryCommands = []string{

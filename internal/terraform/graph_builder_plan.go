@@ -219,7 +219,7 @@ func (b *PlanGraphBuilder) Steps() []GraphTransformer {
 		&ForcedCBDTransformer{},
 
 		// Close opened plugin connections
-		&CloseProviderTransformer{},
+		// &CloseProviderTransformer{},
 
 		// Close the root module
 		&CloseRootModuleTransformer{},

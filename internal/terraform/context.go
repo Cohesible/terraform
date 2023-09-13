@@ -294,7 +294,7 @@ func (c *Context) watchStop(walker *ContextGraphWalker) (chan struct{}, <-chan s
 			walker.providerLock.Lock()
 			ps := make([]providers.Interface, 0, len(walker.providerCache))
 			for _, p := range walker.providerCache {
-				ps = append(ps, p)
+				ps = append(ps, p.provider)
 			}
 			defer walker.providerLock.Unlock()
 

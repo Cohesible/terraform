@@ -14,11 +14,17 @@ import (
 	"github.com/hashicorp/terraform/internal/provisioners"
 )
 
+type CachedProvider struct {
+	provider   providers.Interface
+	configured bool
+}
+
 // contextPlugins represents a library of available plugins (providers and
 // provisioners) which we assume will all be used with the same
 // terraform.Context, and thus it'll be safe to cache certain information
 // about the providers for performance reasons.
 type contextPlugins struct {
+	ProviderCache        map[string]*CachedProvider
 	providerFactories    map[addrs.Provider]providers.Factory
 	provisionerFactories map[string]provisioners.Factory
 
@@ -42,6 +48,7 @@ func newContextPlugins(providerFactories map[addrs.Provider]providers.Factory, p
 }
 
 func (cp *contextPlugins) init() {
+	cp.ProviderCache = map[string]*CachedProvider{}
 	cp.providerSchemas = make(map[addrs.Provider]*ProviderSchema, len(cp.providerFactories))
 	cp.provisionerSchemas = make(map[string]*configschema.Block, len(cp.provisionerFactories))
 }

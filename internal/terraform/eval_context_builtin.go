@@ -61,7 +61,7 @@ type BuiltinEvalContext struct {
 
 	Hooks                 []Hook
 	InputValue            UIInput
-	ProviderCache         map[string]providers.Interface
+	ProviderCache         map[string]*CachedProvider
 	ProviderInputConfig   map[string]map[string]cty.Value
 	ProviderLock          *sync.Mutex
 	ProvisionerCache      map[string]provisioners.Interface
@@ -121,7 +121,8 @@ func (ctx *BuiltinEvalContext) Input() UIInput {
 func (ctx *BuiltinEvalContext) InitProvider(addr addrs.AbsProviderConfig) (providers.Interface, error) {
 	// If we already initialized, it is an error
 	if p := ctx.Provider(addr); p != nil {
-		return nil, fmt.Errorf("%s is already initialized", addr)
+		return p, nil
+		// return nil, fmt.Errorf("%s is already initialized", addr)
 	}
 
 	// Warning: make sure to acquire these locks AFTER the call to Provider
@@ -137,7 +138,10 @@ func (ctx *BuiltinEvalContext) InitProvider(addr addrs.AbsProviderConfig) (provi
 	}
 
 	log.Printf("[TRACE] BuiltinEvalContext: Initialized %q provider for %s", addr.String(), addr)
-	ctx.ProviderCache[key] = p
+	ctx.ProviderCache[key] = &CachedProvider{
+		provider:   p,
+		configured: false,
+	}
 
 	return p, nil
 }
@@ -146,7 +150,12 @@ func (ctx *BuiltinEvalContext) Provider(addr addrs.AbsProviderConfig) providers.
 	ctx.ProviderLock.Lock()
 	defer ctx.ProviderLock.Unlock()
 
-	return ctx.ProviderCache[addr.String()]
+	cached := ctx.ProviderCache[addr.String()]
+	if cached == nil {
+		return nil
+	}
+
+	return cached.provider
 }
 
 func (ctx *BuiltinEvalContext) ProviderSchema(addr addrs.AbsProviderConfig) (*ProviderSchema, error) {
@@ -158,10 +167,10 @@ func (ctx *BuiltinEvalContext) CloseProvider(addr addrs.AbsProviderConfig) error
 	defer ctx.ProviderLock.Unlock()
 
 	key := addr.String()
-	provider := ctx.ProviderCache[key]
-	if provider != nil {
+	cached := ctx.ProviderCache[key]
+	if cached != nil {
 		delete(ctx.ProviderCache, key)
-		return provider.Close()
+		return cached.provider.Close()
 	}
 
 	return nil
@@ -181,6 +190,12 @@ func (ctx *BuiltinEvalContext) ConfigureProvider(addr addrs.AbsProviderConfig, c
 		return diags
 	}
 
+	key := addr.String()
+	cached := ctx.ProviderCache[key]
+	if cached.configured {
+		return diags
+	}
+
 	providerSchema, err := ctx.ProviderSchema(addr)
 	if err != nil {
 		diags = diags.Append(fmt.Errorf("failed to read schema for %s: %s", addr, err))
@@ -197,6 +212,8 @@ func (ctx *BuiltinEvalContext) ConfigureProvider(addr addrs.AbsProviderConfig, c
 	}
 
 	resp := p.ConfigureProvider(req)
+	cached.configured = true
+
 	return resp.Diagnostics
 }
 

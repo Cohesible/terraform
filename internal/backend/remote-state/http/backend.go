@@ -12,15 +12,19 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
 
 	"github.com/hashicorp/terraform/internal/backend"
+	"github.com/hashicorp/terraform/internal/command/views"
 	"github.com/hashicorp/terraform/internal/legacy/helper/schema"
 	"github.com/hashicorp/terraform/internal/logging"
 	"github.com/hashicorp/terraform/internal/states/remote"
 	"github.com/hashicorp/terraform/internal/states/statemgr"
+	"github.com/hashicorp/terraform/internal/terraform"
+	"github.com/hashicorp/terraform/internal/tfdiags"
 )
 
 func New() backend.Backend {
@@ -128,6 +132,22 @@ type Backend struct {
 	*schema.Backend
 
 	client *httpClient
+	opLock sync.Mutex
+
+	// Terraform context. Many of these will be overridden or merged by
+	// Operation. See Operation for more details.
+	ContextOpts *terraform.ContextOpts
+
+	// Cached context
+	tfCtx *terraform.Context
+
+	// OpInput will ask for necessary input prior to performing any operations.
+	//
+	// OpValidation will perform validation prior to running an operation. The
+	// variable naming doesn't match the style of others since we have a func
+	// Validate.
+	OpInput      bool
+	OpValidation bool
 }
 
 // configureTLS configures TLS when needed; if there are no conditions requiring TLS, no change is made.
@@ -240,6 +260,7 @@ func (b *Backend) configure(ctx context.Context) error {
 		// accessible only for testing use
 		Client: rClient,
 	}
+
 	return nil
 }
 
@@ -257,4 +278,126 @@ func (b *Backend) Workspaces() ([]string, error) {
 
 func (b *Backend) DeleteWorkspace(string, bool) error {
 	return backend.ErrWorkspacesNotSupported
+}
+
+// Operation implements backend.Enhanced.
+func (b *Backend) Operation(ctx context.Context, op *backend.Operation) (*backend.RunningOperation, error) {
+	if op.View == nil {
+		panic("Operation called with nil View")
+	}
+
+	// Determine the function to call for our operation
+	var f func(context.Context, context.Context, *backend.Operation, *backend.RunningOperation)
+	switch op.Type {
+	// case backend.OperationTypeRefresh:
+	// 	f = b.opRefresh
+	// case backend.OperationTypePlan:
+	// 	f = b.opPlan
+	case backend.OperationTypeApply:
+		f = b.opApply
+	default:
+		return nil, fmt.Errorf(
+			"unsupported operation type: %s\n\n"+
+				"This is a bug in Terraform and should be reported. The local backend\n"+
+				"is built-in to Terraform and should always support all operations.",
+			op.Type)
+	}
+
+	// Lock
+	b.opLock.Lock()
+
+	// Build our running operation
+	// the runninCtx is only used to block until the operation returns.
+	runningCtx, done := context.WithCancel(context.Background())
+	runningOp := &backend.RunningOperation{
+		Context: runningCtx,
+	}
+
+	// stopCtx wraps the context passed in, and is used to signal a graceful Stop.
+	stopCtx, stop := context.WithCancel(ctx)
+	runningOp.Stop = stop
+
+	// cancelCtx is used to cancel the operation immediately, usually
+	// indicating that the process is exiting.
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	runningOp.Cancel = cancel
+
+	op.StateLocker = op.StateLocker.WithContext(stopCtx)
+
+	// Do it
+	go func() {
+		defer logging.PanicHandler()
+		defer done()
+		defer stop()
+		defer cancel()
+
+		defer b.opLock.Unlock()
+		f(stopCtx, cancelCtx, op, runningOp)
+	}()
+
+	// Return
+	return runningOp, nil
+}
+
+func (b *Backend) opWait(
+	doneCh <-chan struct{},
+	stopCtx context.Context,
+	cancelCtx context.Context,
+	tfCtx *terraform.Context,
+	opStateMgr statemgr.Persister,
+	view views.Operation) (canceled bool) {
+	// Wait for the operation to finish or for us to be interrupted so
+	// we can handle it properly.
+	select {
+	case <-stopCtx.Done():
+		view.Stopping()
+
+		// try to force a PersistState just in case the process is terminated
+		// before we can complete.
+		if err := opStateMgr.PersistState(nil); err != nil {
+			// We can't error out from here, but warn the user if there was an error.
+			// If this isn't transient, we will catch it again below, and
+			// attempt to save the state another way.
+			var diags tfdiags.Diagnostics
+			diags = diags.Append(tfdiags.Sourceless(
+				tfdiags.Error,
+				"Error saving current state",
+				fmt.Sprintf(earlyStateWriteErrorFmt, err),
+			))
+			view.Diagnostics(diags)
+		}
+
+		// Stop execution
+		log.Println("[TRACE] backend/local: waiting for the running operation to stop")
+		go tfCtx.Stop()
+
+		select {
+		case <-cancelCtx.Done():
+			log.Println("[WARN] running operation was forcefully canceled")
+			// if the operation was canceled, we need to return immediately
+			canceled = true
+		case <-doneCh:
+			log.Println("[TRACE] backend/local: graceful stop has completed")
+		}
+	case <-cancelCtx.Done():
+		// this should not be called without first attempting to stop the
+		// operation
+		log.Println("[ERROR] running operation canceled without Stop")
+		canceled = true
+	case <-doneCh:
+	}
+	return
+}
+
+const earlyStateWriteErrorFmt = `Error: %s
+
+Terraform encountered an error attempting to save the state before cancelling the current operation. Once the operation is complete another attempt will be made to save the final state.`
+
+// backend.CLI impl.
+func (b *Backend) CLIInit(opts *backend.CLIOpts) error {
+	b.ContextOpts = opts.ContextOpts
+	b.OpInput = opts.Input
+	b.OpValidation = opts.Validation
+
+	return nil
 }

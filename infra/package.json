@@ -1,6 +1,5 @@
 {
     "name": "@cloudscript/terraform",
-    "version": "0.0.1",
     "dependencies": {
         "@aws-sdk/client-s3": "^3.360.0",
         "@cloudscript/resources": "file:../../cloud-compiler/services/@cloudscript/resources",
@@ -9,8 +8,11 @@
         "@cloudscript/test-runner": "file:../../cloud-compiler/services/@cloudscript/test-runner",
         "@cohesible/domains": "file:../../cloud-compiler/services/@cohesible/domains"
     },
+    "exports": {
+        ".": "./dist/src/index.js"
+    },
     "devDependencies": {
-        "@cloudscript/state-management": "^0.0.37",
+        "@cloudscript/state-management": "^0.0.44",
         "cloudscript": "file:../../cloud-compiler",
         "typescript": "^4.9.5"
     },
@@ -20,5 +22,8 @@
         "destroy": "csc destroy src/index.ts",
         "plan": "csc plan src/index.ts",
         "repl": "csc repl src/index.ts"
-    }
+    },
+    "files": [
+        "dist"
+    ]
 }
