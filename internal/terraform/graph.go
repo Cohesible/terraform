@@ -136,3 +136,40 @@ func (g *Graph) walk(walker GraphWalker) tfdiags.Diagnostics {
 
 	return g.AcyclicGraph.Walk(walkFn)
 }
+
+func (g *Graph) Transform(steps []GraphTransformer) (*Graph, tfdiags.Diagnostics) {
+	var diags tfdiags.Diagnostics
+
+	var lastStepStr string
+	for _, step := range steps {
+		if step == nil {
+			continue
+		}
+		log.Printf("[TRACE] Executing graph transform %T", step)
+
+		err := step.Transform(g)
+		if thisStepStr := g.StringWithNodeTypes(); thisStepStr != lastStepStr {
+			log.Printf("[TRACE] Completed graph transform %T with new graph:\n%s  ------", step, logging.Indent(thisStepStr))
+			lastStepStr = thisStepStr
+		} else {
+			log.Printf("[TRACE] Completed graph transform %T (no changes)", step)
+		}
+
+		if err != nil {
+			if nf, isNF := err.(tfdiags.NonFatalError); isNF {
+				diags = diags.Append(nf.Diagnostics)
+			} else {
+				diags = diags.Append(err)
+				return g, diags
+			}
+		}
+	}
+
+	if err := g.Validate(); err != nil {
+		log.Printf("[ERROR] Graph validation failed. Graph:\n\n%s", g.String())
+		diags = diags.Append(err)
+		return nil, diags
+	}
+
+	return g, diags
+}

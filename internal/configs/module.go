@@ -33,6 +33,7 @@ type Module struct {
 
 	ActiveExperiments experiments.Set
 
+	Allocator            *Allocator
 	Backend              *Backend
 	CloudConfig          *CloudConfig
 	ProviderConfigs      map[string]*Provider
@@ -70,6 +71,7 @@ type File struct {
 	CoreVersionConstraints []VersionConstraint
 
 	ActiveExperiments experiments.Set
+	Allocator         *Allocator
 
 	Backends          []*Backend
 	CloudConfigs      []*CloudConfig
@@ -182,6 +184,10 @@ func (m *Module) ResourceByAddr(addr addrs.Resource) *Resource {
 	}
 }
 
+func (m *Module) AppendFile(file *File) hcl.Diagnostics {
+	return m.appendFile(file)
+}
+
 func (m *Module) appendFile(file *File) hcl.Diagnostics {
 	var diags hcl.Diagnostics
 
@@ -190,6 +196,7 @@ func (m *Module) appendFile(file *File) hcl.Diagnostics {
 	m.CoreVersionConstraints = append(m.CoreVersionConstraints, file.CoreVersionConstraints...)
 
 	m.ActiveExperiments = experiments.SetUnion(m.ActiveExperiments, file.ActiveExperiments)
+	m.Allocator = file.Allocator
 
 	for _, b := range file.Backends {
 		if m.Backend != nil {

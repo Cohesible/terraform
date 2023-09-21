@@ -38,6 +38,10 @@ func (p *Parser) loadConfigFile(path string, override bool) (*File, hcl.Diagnost
 		return nil, diags
 	}
 
+	return LoadConfigFileFromBody(body, diags, override, p.allowExperiments)
+}
+
+func LoadConfigFileFromBody(body hcl.Body, diags hcl.Diagnostics, override bool, allowExperiments bool) (*File, hcl.Diagnostics) {
 	file := &File{}
 
 	var reqDiags hcl.Diagnostics
@@ -47,7 +51,7 @@ func (p *Parser) loadConfigFile(path string, override bool) (*File, hcl.Diagnost
 	// We'll load the experiments first because other decoding logic in the
 	// loop below might depend on these experiments.
 	var expDiags hcl.Diagnostics
-	file.ActiveExperiments, expDiags = sniffActiveExperiments(body, p.allowExperiments)
+	file.ActiveExperiments, expDiags = sniffActiveExperiments(body, allowExperiments)
 	diags = append(diags, expDiags...)
 
 	content, contentDiags := body.Content(configFileSchema)
@@ -178,6 +182,13 @@ func (p *Parser) loadConfigFile(path string, override bool) (*File, hcl.Diagnost
 				file.Checks = append(file.Checks, cfg)
 			}
 
+		case "allocator":
+			cfg, cfgDiags := decodeAllocatorBlock(block, override)
+			diags = append(diags, cfgDiags...)
+			if cfg != nil {
+				file.Allocator = cfg
+			}
+
 		default:
 			// Should never happen because the above cases should be exhaustive
 			// for all block type names in our schema.
@@ -274,6 +285,9 @@ var configFileSchema = &hcl.BodySchema{
 		{
 			Type:       "check",
 			LabelNames: []string{"name"},
+		},
+		{
+			Type: "allocator",
 		},
 	},
 }
