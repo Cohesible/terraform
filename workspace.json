@@ -2,7 +2,6 @@
     "id": "terraform",
     "defaultBranch": "main",
     "deployOptions": {
-        "backend": "infra/node_modules/@cloudscript/state-management/dist/src/index.deployed.js",
-        "terraformPath": "infra/src/index.ts"
+        "terraformPath": ".cloudscript/terraform/1.5.8/terraform_v1.5.8"
     }
 }

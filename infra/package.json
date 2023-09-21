@@ -3,7 +3,6 @@
     "dependencies": {
         "@aws-sdk/client-s3": "^3.360.0",
         "@cloudscript/resources": "file:../../cloud-compiler/services/@cloudscript/resources",
-        "@cloudscript/runtime": "file:../../cloud-compiler/services/@cloudscript/runtime",
         "@cloudscript/signing": "file:../../cloud-compiler/services/@cloudscript/signing",
         "@cloudscript/test-runner": "file:../../cloud-compiler/services/@cloudscript/test-runner",
         "@cohesible/domains": "file:../../cloud-compiler/services/@cohesible/domains"
@@ -12,7 +11,6 @@
         ".": "./dist/src/index.js"
     },
     "devDependencies": {
-        "@cloudscript/state-management": "^0.0.44",
         "cloudscript": "file:../../cloud-compiler",
         "typescript": "^4.9.5"
     },

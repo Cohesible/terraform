@@ -1,10 +1,9 @@
 import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
 import * as http from 'node:https'
-import * as cloudLib from '@cloudscript/runtime/lib'
 import * as resources from '@cloudscript/resources'
 import { runCommand, Key } from '@cloudscript/signing'
-import { bindFunctionModel, bindObjectModel } from '@cloudscript/runtime'
+import { bindFunctionModel, bindObjectModel } from 'cloudscript:core'
 import { myUserClient, userClientPermissions } from '@cloudscript/test-runner/app'
 
 // const downloadDomain = domains.cohesible.createSubdomain('download')
