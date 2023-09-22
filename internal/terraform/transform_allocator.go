@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
+	"os"
 
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/configs"
@@ -237,7 +239,16 @@ func importState(endpoint string, scope string, resources []*addrs.Reference) (r
 		))
 	}
 
-	resp, err := client.Post(url.JoinPath("import", scope).String(), "application/json", buf)
+	httpRequest, _ := http.NewRequest("POST", url.JoinPath("import", scope).String(), buf)
+	httpRequest.Header["Content-Type"] = []string{"application/json"}
+
+	username, _ := os.LookupEnv("TF_HTTP_USERNAME")
+	password, _ := os.LookupEnv("TF_HTTP_PASSWORD")
+	if username != "" && password != "" {
+		httpRequest.SetBasicAuth(username, password)
+	}
+
+	resp, err := client.Do(httpRequest)
 	if err != nil {
 		return nil, diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
@@ -299,8 +310,16 @@ func exportState(endpoint string, scope string, resources map[string]interface{}
 			fmt.Sprintf("Bad encode %s", err),
 		))
 	}
+	httpRequest, _ := http.NewRequest("POST", url.JoinPath("export", scope).String(), buf)
+	httpRequest.Header["Content-Type"] = []string{"application/json"}
 
-	resp, err := client.Post(url.JoinPath("export", scope).String(), "application/json", buf)
+	username, _ := os.LookupEnv("TF_HTTP_USERNAME")
+	password, _ := os.LookupEnv("TF_HTTP_PASSWORD")
+	if username != "" && password != "" {
+		httpRequest.SetBasicAuth(username, password)
+	}
+
+	resp, err := client.Do(httpRequest)
 	if err != nil {
 		return diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
