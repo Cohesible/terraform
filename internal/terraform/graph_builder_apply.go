@@ -172,6 +172,8 @@ func (b *ApplyGraphBuilder) Steps() []GraphTransformer {
 			State:  b.State,
 		},
 
+		&DeallocatorTransformer{Config: b.Config},
+
 		// We need to remove configuration nodes that are not used at all, as
 		// they may not be able to evaluate, especially during destroy.
 		// These include variables, locals, and instance expanders.

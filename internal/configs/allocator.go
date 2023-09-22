@@ -18,6 +18,7 @@ import (
 
 type Allocator struct {
 	Scope     string
+	Module    string
 	Endpoint  string
 	Resources []*addrs.Reference
 	DeclRange hcl.Range
@@ -36,6 +37,12 @@ func decodeAllocatorBlock(block *hcl.Block, override bool) (*Allocator, hcl.Diag
 		scope, hclDiags := decodeAsString(attr)
 		diags = diags.Extend(hclDiags)
 		r.Scope = scope
+	}
+
+	if attr, exists := content.Attributes["module"]; exists {
+		module, hclDiags := decodeAsString(attr)
+		diags = diags.Extend(hclDiags)
+		r.Module = module
 	}
 
 	if attr, exists := content.Attributes["endpoint"]; exists {
@@ -198,6 +205,10 @@ var AllocatorBlockSchema = &hcl.BodySchema{
 	Attributes: []hcl.AttributeSchema{
 		{
 			Name:     "scope",
+			Required: true,
+		},
+		{
+			Name:     "module",
 			Required: true,
 		},
 		{
