@@ -22,6 +22,62 @@ import (
 	ctyjson "github.com/zclconf/go-cty/cty/json"
 )
 
+type Allocator struct {
+	Config   *configs.Allocator
+	imported map[string]cty.Value
+}
+
+func (a *Allocator) ImportState() (ret *map[string]cty.Value, diags tfdiags.Diagnostics) {
+	if a.imported != nil {
+		return &a.imported, nil
+	}
+
+	resources := a.Config.Resources
+	keys := make([]string, len(resources))
+	for i, r := range resources {
+		key := r.Subject.String()
+		keys[i] = key
+	}
+
+	req := allocatorImportRequest{
+		Module:    a.Config.Module,
+		Resources: keys,
+	}
+	importResp := &allocatorImportResponse{}
+
+	url, d := makeUrl(a.Config.Endpoint, a.Config.Scope, "import")
+	if d.HasErrors() {
+		return nil, diags.Append(d)
+	}
+
+	d = sendRequest(url, req, importResp)
+	if d.HasErrors() {
+		return nil, diags.Append(d)
+	}
+
+	a.imported = map[string]cty.Value{}
+
+	for key, r := range importResp.Resources {
+		log.Printf("[INFO] graphNodeAllocator: imported %s", key)
+		a.imported[key] = r.Value
+	}
+
+	ret = &a.imported
+
+	return ret, nil
+}
+
+var allocator *Allocator
+
+func getAllocator(config *configs.Allocator) *Allocator {
+	if allocator != nil {
+		return allocator
+	}
+
+	allocator = &Allocator{Config: config}
+	return allocator
+}
+
 type AllocatorTransformer struct {
 	Config       *configs.Config
 	State        *states.State
@@ -42,7 +98,7 @@ func (t *AllocatorTransformer) transformModule(g *Graph, c *configs.Config) erro
 		return nil
 	}
 
-	imported, diags := importState(allocator.Endpoint, allocator.Scope, allocator.Module, allocator.Resources)
+	imported, diags := getAllocator(allocator).ImportState()
 	if diags.HasErrors() {
 		return diags.Err()
 	}
@@ -54,7 +110,7 @@ func (t *AllocatorTransformer) transformModule(g *Graph, c *configs.Config) erro
 		key := addr.String()
 		rMap[key] = r
 
-		if s, exists := imported[key]; exists {
+		if s, exists := (*imported)[key]; exists {
 			ir = append(ir, importedResource{
 				addr:     addr,
 				provider: c.ResolveAbsProviderAddr(r.ProviderConfigAddr(), addrs.RootModule),
@@ -66,7 +122,7 @@ func (t *AllocatorTransformer) transformModule(g *Graph, c *configs.Config) erro
 	exported := make([]exportedResource, 0)
 	for _, ref := range allocator.Resources {
 		key := ref.Subject.String()
-		if _, exists := imported[key]; !exists {
+		if _, exists := (*imported)[key]; !exists {
 			if r, rExists := rMap[key]; rExists {
 				exported = append(exported, exportedResource{
 					addr:     r.Addr(),
@@ -89,7 +145,7 @@ func (t *AllocatorTransformer) transformModule(g *Graph, c *configs.Config) erro
 				key := n.ResourceAddr().String()
 				log.Printf("[INFO] allocator: %s ", key)
 
-				if _, exists := imported[key]; !exists {
+				if _, exists := (*imported)[key]; !exists {
 					return
 				}
 			default:
@@ -307,43 +363,6 @@ func makeUrl(endpoint, scope, path string) (ret string, diags tfdiags.Diagnostic
 
 	ret = url.JoinPath(path, scope).String()
 	return ret, diags
-}
-
-func importState(endpoint, scope, module string, resources []*addrs.Reference) (ret map[string]cty.Value, diags tfdiags.Diagnostics) {
-	keys := make([]string, len(resources))
-	for i, r := range resources {
-		key := r.Subject.String()
-		keys[i] = key
-	}
-
-	req := allocatorImportRequest{
-		Module:    module,
-		Resources: keys,
-	}
-	importResp := &allocatorImportResponse{}
-
-	url, d := makeUrl(endpoint, scope, "import")
-	if d.HasErrors() {
-		return nil, diags.Append(d)
-	}
-
-	d = sendRequest(url, req, importResp)
-	if d.HasErrors() {
-		return nil, diags.Append(d)
-	}
-
-	ret = map[string]cty.Value{}
-	//imported := make([]importedResource, len(ret.Resources))
-	for key, r := range importResp.Resources {
-		log.Printf("[INFO] graphNodeAllocator: imported %s", key)
-		ret[key] = r.Value
-		// imported = append(imported, importedResource{
-		// 	addr:  addrMap[key],
-		// 	state: val,
-		// })
-	}
-
-	return ret, nil
 }
 
 type allocatorExportRequest struct {
