@@ -62,6 +62,7 @@ type ResourceInstanceObjectSrc struct {
 	Status              ObjectStatus
 	Dependencies        []addrs.ConfigResource
 	CreateBeforeDestroy bool
+	Imported            bool
 }
 
 // Decode unmarshals the raw representation of the object attributes. Pass the

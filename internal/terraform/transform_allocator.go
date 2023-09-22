@@ -12,10 +12,12 @@ import (
 
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/configs"
+	"github.com/hashicorp/terraform/internal/dag"
 	"github.com/hashicorp/terraform/internal/httpclient"
 	"github.com/hashicorp/terraform/internal/states"
 	"github.com/hashicorp/terraform/internal/tfdiags"
 	"github.com/zclconf/go-cty/cty"
+	ctyjson "github.com/zclconf/go-cty/cty/json"
 )
 
 type AllocatorTransformer struct {
@@ -42,35 +44,53 @@ func (t *AllocatorTransformer) transformModule(g *Graph, c *configs.Config) erro
 		return diags.Err()
 	}
 
-	state := t.State.RootModule()
+	ir := make([]importedResource, 0)
+
 	for _, r := range c.Module.ManagedResources {
-		key := r.Addr().String()
-		if s, exists := imported.Resources[key]; exists {
-			rState := &states.ResourceInstanceObject{
-				Status: states.ObjectReady,
-				Value:  s,
-			}
+		addr := r.Addr()
+		key := addr.String()
 
-			encoded, err := rState.Encode(cty.DynamicPseudoType, 0)
-			if err != nil {
-				panic(err)
-			}
-
-			// rs := state.Resource(r.Addr())
-			// if rs == nil {
-
-			// }
-			rs := &states.Resource{
-				Addr:      r.Addr().Absolute(addrs.RootModuleInstance),
-				Instances: map[addrs.InstanceKey]*states.ResourceInstance{},
-			}
-			state.Resources[key] = rs
-
-			ri := rs.CreateInstance(addrs.NoKey)
-			ri.Current = encoded
+		if s, exists := imported[key]; exists {
+			ir = append(ir, importedResource{
+				Type:     r.Type,
+				addr:     addr,
+				provider: c.ResolveAbsProviderAddr(r.ProviderConfigAddr(), addrs.RootModule),
+				state:    s,
+			})
 		}
-
 	}
+
+	nodes := g.Vertices()
+	for i := 0; i < len(nodes); i++ {
+		// run this in a closure, so we can return early rather than
+		// dealing with complex looping and labels
+		func() {
+			n := nodes[i]
+			switch n := n.(type) {
+			case GraphNodeConfigResource:
+				key := n.ResourceAddr().String()
+				log.Printf("[INFO] allocator: %s ", key)
+
+				if _, exists := imported[key]; !exists {
+					return
+				}
+			default:
+				return
+			}
+
+			log.Printf("[INFO] allocator: %s is no longer needed, removing", dag.VertexName(n))
+			g.Remove(n)
+
+			// remove the node from our iteration as well
+			last := len(nodes) - 1
+			nodes[i], nodes[last] = nodes[last], nodes[i]
+			nodes = nodes[:last]
+		}()
+	}
+
+	g.Add(&graphNodeAllocator{
+		Resources: ir,
+	})
 
 	// // Also populate locals for child modules
 	// for _, cc := range c.Children {
@@ -83,24 +103,23 @@ func (t *AllocatorTransformer) transformModule(g *Graph, c *configs.Config) erro
 }
 
 type importedResource struct {
-	addr  addrs.AbsResourceInstance
-	state cty.Value
+	Type string
+
+	addr     addrs.Resource
+	provider addrs.AbsProviderConfig
+	state    cty.Value
 }
 
 type graphNodeAllocator struct {
-	Scope     string
-	Endpoint  string
-	Resources []addrs.AbsResourceInstance
-	states    []importedResource
+	Resources []importedResource
 }
 
 var (
-	_ GraphNodeExecutable        = (*graphNodeAllocator)(nil)
-	_ GraphNodeDynamicExpandable = (*graphNodeAllocator)(nil)
+	_ GraphNodeExecutable = (*graphNodeAllocator)(nil)
 )
 
 func (n *graphNodeAllocator) Name() string {
-	return fmt.Sprintf("%s (import id %s)", n.Endpoint, n.Scope)
+	return fmt.Sprintf("allocator")
 }
 
 type allocatorImportRequest struct {
@@ -108,10 +127,10 @@ type allocatorImportRequest struct {
 }
 
 type allocatorImportResponse struct {
-	Resources map[string]cty.Value `json:"resources"`
+	Resources map[string]ctyjson.SimpleJSONValue `json:"resources"`
 }
 
-func importState(endpoint string, scope string, resources []*addrs.Reference) (ret *allocatorImportResponse, diags tfdiags.Diagnostics) {
+func importState(endpoint string, scope string, resources []*addrs.Reference) (ret map[string]cty.Value, diags tfdiags.Diagnostics) {
 	client := httpclient.New()
 	url, err := url.Parse(endpoint)
 	if err != nil {
@@ -149,23 +168,26 @@ func importState(endpoint string, scope string, resources []*addrs.Reference) (r
 		return nil, diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
 			"Resource allocator unavailable",
-			fmt.Sprintf("The resource allocator failed to respond at %s: %s", endpoint, err),
+			fmt.Sprintf("The resource allocator failed to respond at %s: %w", endpoint, err),
 		))
 	}
 
+	importResp := &allocatorImportResponse{}
 	decoder := json.NewDecoder(resp.Body)
-	err = decoder.Decode(ret)
+	err = decoder.Decode(importResp)
 	if err != nil {
 		return nil, diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
 			"Resource allocator bad response",
-			fmt.Sprintf("Malformed response: %s", err),
+			fmt.Sprintf("Malformed response: %w", err),
 		))
 	}
 
+	ret = map[string]cty.Value{}
 	//imported := make([]importedResource, len(ret.Resources))
-	for key, _ := range ret.Resources {
+	for key, r := range importResp.Resources {
 		log.Printf("[INFO] graphNodeAllocator: imported %s", key)
+		ret[key] = r.Value
 		// imported = append(imported, importedResource{
 		// 	addr:  addrMap[key],
 		// 	state: val,
@@ -177,119 +199,28 @@ func importState(endpoint string, scope string, resources []*addrs.Reference) (r
 
 // GraphNodeExecutable impl.
 func (n *graphNodeAllocator) Execute(ctx EvalContext, op walkOperation) (diags tfdiags.Diagnostics) {
-	// Reset our states
-	n.states = nil
+	for _, r := range n.Resources {
+		if p := ctx.Provider(r.provider); p == nil {
+			ctx.InitProvider(r.provider)
+		}
 
-	client := httpclient.New()
-	url, err := url.Parse(n.Endpoint)
-	if err != nil {
-		return diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Invalid allocator endpoint",
-			fmt.Sprintf("Endpoint is not a url %s: %s", n.Endpoint, err),
-		))
+		addr := r.addr.Instance(addrs.NoKey).Absolute(addrs.RootModuleInstance)
+		node := &NodeAbstractResourceInstance{
+			Addr: addr,
+			NodeAbstractResource: NodeAbstractResource{
+				ResolvedProvider: r.provider,
+			},
+		}
+		rState := &states.ResourceInstanceObject{
+			Status:   states.ObjectReady,
+			Value:    r.state,
+			Imported: true,
+		}
+		diags = diags.Append(node.writeResourceInstanceState(ctx, rState, workingState))
+		log.Printf("[INFO] graphNodeAllocator: wrote %s", r.addr)
 	}
-
-	addrMap := make(map[string]addrs.AbsResourceInstance, len(n.Resources))
-	resources := make([]string, len(n.Resources))
-	for i, r := range n.Resources {
-		key := r.Resource.String()
-		resources[i] = key
-		addrMap[key] = r
-	}
-
-	req := allocatorImportRequest{
-		Resources: resources,
-	}
-
-	buf := new(bytes.Buffer)
-	err = json.NewEncoder(buf).Encode(req)
-	if err != nil {
-		return diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Bad encode",
-			fmt.Sprintf("Bad encode %s", err),
-		))
-	}
-
-	resp, err := client.Post(url.JoinPath("import", n.Scope).String(), "application/json", buf)
-	if err != nil {
-		return diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Resource allocator unavailable",
-			fmt.Sprintf("The resource allocator failed to respond at %s: %s", n.Endpoint, err),
-		))
-	}
-
-	decoder := json.NewDecoder(resp.Body)
-	var val allocatorImportResponse
-	err = decoder.Decode(val)
-	if err != nil {
-		return diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Resource allocator bad response",
-			fmt.Sprintf("Malformed response: %s", err),
-		))
-	}
-
-	imported := make([]importedResource, len(val.Resources))
-	for key, val := range val.Resources {
-		log.Printf("[INFO] graphNodeAllocator: imported %s", key)
-		imported = append(imported, importedResource{
-			addr:  addrMap[key],
-			state: val,
-		})
-	}
-
-	n.states = imported
 
 	return diags
-}
-
-// GraphNodeDynamicExpandable impl.
-//
-// We use DynamicExpand as a way to generate the subgraph of refreshes
-// and state inserts we need to do for our import state. Since they're new
-// resources they don't depend on anything else and refreshes are isolated
-// so this is nearly a perfect use case for dynamic expand.
-func (n *graphNodeAllocator) DynamicExpand(ctx EvalContext) (*Graph, error) {
-	var diags tfdiags.Diagnostics
-
-	g := &Graph{Path: ctx.Path()}
-
-	// Verify that all the addresses are clear
-	state := ctx.State()
-	for _, r := range n.states {
-		existing := state.ResourceInstance(r.addr)
-		if existing != nil {
-			diags = diags.Append(tfdiags.Sourceless(
-				tfdiags.Error,
-				"Resource already managed by Terraform",
-				fmt.Sprintf("Terraform is already managing a remote object for %s. To import to this address you must first remove the existing object from the state.", r.addr),
-			))
-			continue
-		}
-	}
-	if diags.HasErrors() {
-		// Bail out early, then.
-		return nil, diags.Err()
-	}
-
-	// For each of the states, we add a node to handle the refresh/add to state.
-	// "n.states" is populated by our own Execute with the result of
-	// ImportState. Since DynamicExpand is always called after Execute, this is
-	// safe.
-	for _, r := range n.states {
-		g.Add(&graphNodeAllocatorStateSub{
-			TargetAddr: r.addr,
-			State:      r.state,
-		})
-	}
-
-	addRootNodeToGraph(g)
-
-	// Done!
-	return g, diags.Err()
 }
 
 type graphNodeAllocatorStateSub struct {

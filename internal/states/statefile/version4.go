@@ -387,33 +387,36 @@ func writeStateV4(file *File, w io.Writer) tfdiags.Diagnostics {
 				continue
 			}
 
-			sV4.Resources = append(sV4.Resources, resourceStateV4{
+			res := resourceStateV4{
 				Module:         moduleAddr.String(),
 				Mode:           mode,
 				Type:           resourceAddr.Type,
 				Name:           resourceAddr.Name,
 				ProviderConfig: rs.ProviderConfig.String(),
 				Instances:      []instanceObjectStateV4{},
-			})
-			rsV4 := &(sV4.Resources[len(sV4.Resources)-1])
+			}
 
 			for key, is := range rs.Instances {
-				if is.HasCurrent() {
+				if is.HasCurrent() && !is.Current.Imported {
 					var objDiags tfdiags.Diagnostics
-					rsV4.Instances, objDiags = appendInstanceObjectStateV4(
+					res.Instances, objDiags = appendInstanceObjectStateV4(
 						rs, is, key, is.Current, states.NotDeposed,
-						rsV4.Instances,
+						res.Instances,
 					)
 					diags = diags.Append(objDiags)
 				}
 				for dk, obj := range is.Deposed {
 					var objDiags tfdiags.Diagnostics
-					rsV4.Instances, objDiags = appendInstanceObjectStateV4(
+					res.Instances, objDiags = appendInstanceObjectStateV4(
 						rs, is, key, obj, dk,
-						rsV4.Instances,
+						res.Instances,
 					)
 					diags = diags.Append(objDiags)
 				}
+			}
+
+			if len(res.Instances) > 0 {
+				sV4.Resources = append(sV4.Resources, res)
 			}
 		}
 	}

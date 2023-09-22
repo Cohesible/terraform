@@ -94,7 +94,7 @@ func decodeResources(expr hcl.Expression) ([]*addrs.Reference, hcl.Diagnostics) 
 	isJSON := hcljson.IsJSONExpression(expr)
 
 	exprs, diags := hcl.ExprList(expr)
-	ret := make([]*addrs.Reference, len(exprs))
+	ret := make([]*addrs.Reference, 0)
 
 	for i, expr := range exprs {
 		if isJSON {
