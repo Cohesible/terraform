@@ -21,8 +21,9 @@ import (
 )
 
 type AllocatorTransformer struct {
-	Config *configs.Config
-	State  *states.State
+	Config       *configs.Config
+	State        *states.State
+	ShouldExport bool
 }
 
 func (t *AllocatorTransformer) Transform(g *Graph) error {
@@ -45,18 +46,33 @@ func (t *AllocatorTransformer) transformModule(g *Graph, c *configs.Config) erro
 	}
 
 	ir := make([]importedResource, 0)
-
+	rMap := map[string]*configs.Resource{}
 	for _, r := range c.Module.ManagedResources {
 		addr := r.Addr()
 		key := addr.String()
+		rMap[key] = r
 
 		if s, exists := imported[key]; exists {
 			ir = append(ir, importedResource{
-				Type:     r.Type,
 				addr:     addr,
 				provider: c.ResolveAbsProviderAddr(r.ProviderConfigAddr(), addrs.RootModule),
 				state:    s,
 			})
+		}
+	}
+
+	exported := make([]exportedResource, 0)
+	for _, ref := range allocator.Resources {
+		key := ref.Subject.String()
+		if _, exists := imported[key]; !exists {
+			if r, rExists := rMap[key]; rExists {
+				exported = append(exported, exportedResource{
+					addr:     r.Addr(),
+					provider: c.ResolveAbsProviderAddr(r.ProviderConfigAddr(), addrs.RootModule),
+				})
+
+				log.Printf("[INFO] allocator: planning to export resource %s", key)
+			}
 		}
 	}
 
@@ -92,26 +108,84 @@ func (t *AllocatorTransformer) transformModule(g *Graph, c *configs.Config) erro
 		Resources: ir,
 	})
 
-	// // Also populate locals for child modules
-	// for _, cc := range c.Children {
-	// 	if err := t.transformModule(g, cc); err != nil {
-	// 		return err
-	// 	}
-	// }
+	if len(exported) > 0 && t.ShouldExport {
+		g.Add(&graphNodeAllocatorExport{
+			Endpoint: allocator.Endpoint,
+			Scope:    allocator.Scope,
+			Exported: exported,
+		})
+	}
 
 	return nil
 }
 
 type importedResource struct {
-	Type string
-
 	addr     addrs.Resource
 	provider addrs.AbsProviderConfig
 	state    cty.Value
 }
 
+type exportedResource struct {
+	addr     addrs.Resource
+	provider addrs.AbsProviderConfig
+}
+
 type graphNodeAllocator struct {
 	Resources []importedResource
+}
+
+type graphNodeAllocatorExport struct {
+	Endpoint string
+	Scope    string
+	Exported []exportedResource
+}
+
+var (
+	_ GraphNodeModulePath = (*graphNodeAllocatorExport)(nil)
+	_ GraphNodeExecutable = (*graphNodeAllocatorExport)(nil)
+	_ GraphNodeReferencer = (*graphNodeAllocatorExport)(nil)
+)
+
+func (n *graphNodeAllocatorExport) Name() string {
+	return fmt.Sprintf("allocator (export)")
+}
+
+func (n *graphNodeAllocatorExport) ModulePath() addrs.Module {
+	return addrs.RootModule
+}
+
+func (n *graphNodeAllocatorExport) References() []*addrs.Reference {
+	refs := make([]*addrs.Reference, len(n.Exported))
+	for i, ref := range n.Exported {
+		refs[i] = &addrs.Reference{Subject: ref.addr}
+	}
+
+	return refs
+}
+
+func (n *graphNodeAllocatorExport) Execute(ctx EvalContext, op walkOperation) (diags tfdiags.Diagnostics) {
+	if op == walkApply {
+		log.Printf("[INFO] allocator: exporting resources, total count %d", len(n.Exported))
+		resources := map[string]interface{}{}
+		for _, r := range n.Exported {
+			state := ctx.State().Resource(r.addr.Absolute(addrs.RootModuleInstance))
+			is := state.Instance(addrs.NoKey)
+			if is != nil && is.HasCurrent() {
+				schemas, _ := ctx.ProviderSchema(r.provider)
+				schema, _ := schemas.SchemaForResourceAddr(r.addr)
+				// Not sure how to avoid unmarshaling here
+				decoded, _ := is.Current.Decode(schema.ImpliedType())
+				resources[r.addr.String()] = ctyjson.SimpleJSONValue{Value: decoded.Value}
+
+				// Don't persist this resource
+				is.Current.Imported = true
+			}
+		}
+
+		return diags.Append(exportState(n.Endpoint, n.Scope, resources))
+	}
+
+	return diags
 }
 
 var (
@@ -195,6 +269,49 @@ func importState(endpoint string, scope string, resources []*addrs.Reference) (r
 	}
 
 	return ret, nil
+}
+
+type allocatorExportRequest struct {
+	Resources map[string]interface{} `json:"resources"`
+}
+
+func exportState(endpoint string, scope string, resources map[string]interface{}) (diags tfdiags.Diagnostics) {
+	client := httpclient.New()
+	url, err := url.Parse(endpoint)
+	if err != nil {
+		return diags.Append(tfdiags.Sourceless(
+			tfdiags.Error,
+			"Invalid allocator endpoint",
+			fmt.Sprintf("Endpoint is not a url %s: %s", endpoint, err),
+		))
+	}
+
+	req := allocatorExportRequest{
+		Resources: resources,
+	}
+
+	buf := new(bytes.Buffer)
+	err = json.NewEncoder(buf).Encode(req)
+	if err != nil {
+		return diags.Append(tfdiags.Sourceless(
+			tfdiags.Error,
+			"Bad encode",
+			fmt.Sprintf("Bad encode %s", err),
+		))
+	}
+
+	resp, err := client.Post(url.JoinPath("export", scope).String(), "application/json", buf)
+	if err != nil {
+		return diags.Append(tfdiags.Sourceless(
+			tfdiags.Error,
+			"Resource allocator unavailable",
+			fmt.Sprintf("The resource allocator failed to respond at %s: %w", endpoint, err),
+		))
+	}
+
+	resp.Body.Close()
+
+	return diags
 }
 
 // GraphNodeExecutable impl.

@@ -93,7 +93,12 @@ func (b *ApplyGraphBuilder) Steps() []GraphTransformer {
 			Concrete: concreteResource,
 			Config:   b.Config,
 		},
-		&AllocatorTransformer{Config: b.Config, State: b.State},
+
+		&AllocatorTransformer{
+			Config:       b.Config,
+			State:        b.State,
+			ShouldExport: true,
+		},
 
 		// Add dynamic values
 		&RootVariableTransformer{Config: b.Config, RawValues: b.RootVariableValues},
