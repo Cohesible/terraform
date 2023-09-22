@@ -297,9 +297,10 @@ func (t *AllocatorTransformer) transformModule(g *Graph, c *configs.Config) erro
 		}()
 	}
 
-	g.Add(&graphNodeAllocator{
-		Resources: ir,
-	})
+	for _, r := range ir {
+		node := graphNodeResourceAllocator{resource: r}
+		g.Add(&node)
+	}
 
 	if len(exported) > 0 && t.ShouldExport {
 		g.Add(&graphNodeAllocatorExport{
@@ -365,10 +366,6 @@ type importedResource struct {
 type exportedResource struct {
 	addr     addrs.Resource
 	provider addrs.AbsProviderConfig
-}
-
-type graphNodeAllocator struct {
-	Resources []importedResource
 }
 
 type graphNodeAllocatorExport struct {
@@ -449,14 +446,6 @@ func (n *graphNodeAllocatorExport) Execute(ctx EvalContext, op walkOperation) (d
 	}
 
 	return diags
-}
-
-var (
-	_ GraphNodeExecutable = (*graphNodeAllocator)(nil)
-)
-
-func (n *graphNodeAllocator) Name() string {
-	return fmt.Sprintf("allocator")
 }
 
 type allocatorImportRequest struct {
@@ -615,45 +604,77 @@ func (a *Allocator) Unref() (shouldDestroy []addrs.AbsResource, diags tfdiags.Di
 	return shouldDestroy, diags
 }
 
-// GraphNodeExecutable impl.
-func (n *graphNodeAllocator) Execute(ctx EvalContext, op walkOperation) (diags tfdiags.Diagnostics) {
+type graphNodeResourceAllocator struct {
+	resource importedResource
+}
+
+var (
+	_ GraphNodeModulePath       = (*graphNodeResourceAllocator)(nil)
+	_ GraphNodeExecutable       = (*graphNodeResourceAllocator)(nil)
+	_ GraphNodeReferenceable    = (*graphNodeResourceAllocator)(nil)
+	_ GraphNodeProviderConsumer = (*graphNodeResourceAllocator)(nil)
+)
+
+func (n *graphNodeResourceAllocator) Name() string {
+	return fmt.Sprintf("%s (import)", n.resource.addr)
+}
+
+// ReferenceableAddrs implements GraphNodeReferenceable.
+func (n *graphNodeResourceAllocator) ReferenceableAddrs() []addrs.Referenceable {
+	return []addrs.Referenceable{n.resource.addr}
+}
+
+// ModulePath implements GraphNodeProviderConsumer.
+func (*graphNodeResourceAllocator) ModulePath() addrs.Module {
+	return addrs.RootModule
+}
+
+// ProvidedBy implements GraphNodeProviderConsumer.
+func (n *graphNodeResourceAllocator) ProvidedBy() (addr addrs.ProviderConfig, exact bool) {
+	return n.resource.provider, true
+}
+
+// Provider implements GraphNodeProviderConsumer.
+func (n *graphNodeResourceAllocator) Provider() (provider tfaddr.Provider) {
+	return n.resource.provider.Provider
+}
+
+// SetProvider implements GraphNodeProviderConsumer.
+func (n *graphNodeResourceAllocator) SetProvider(addr addrs.AbsProviderConfig) {
+}
+
+func (n *graphNodeResourceAllocator) Execute(ctx EvalContext, op walkOperation) (diags tfdiags.Diagnostics) {
 	if op == walkPlanDestroy || op == walkDestroy {
 		return diags
 	}
 
-	for _, r := range n.Resources {
-		if p := ctx.Provider(r.provider); p == nil {
-			ctx.InitProvider(r.provider)
-		}
+	schemas, _ := ctx.ProviderSchema(n.resource.provider)
 
-		schemas, _ := ctx.ProviderSchema(r.provider)
-
-		ris := states.ResourceInstanceObjectSrc{
-			SchemaVersion: r.state.SchemaVersion,
-			AttrsJSON:     r.state.State,
-		}
-
-		schema, _ := schemas.SchemaForResourceAddr(r.addr)
-		// Not sure how to avoid unmarshaling here
-		decoded, err := ris.Decode(schema.ImpliedType())
-		if err != nil {
-			return diags.Append(err)
-		}
-
-		decoded.Status = states.ObjectReady
-		decoded.Imported = true
-
-		addr := r.addr.Instance(addrs.NoKey).Absolute(addrs.RootModuleInstance)
-		node := &NodeAbstractResourceInstance{
-			Addr: addr,
-			NodeAbstractResource: NodeAbstractResource{
-				ResolvedProvider: r.provider,
-			},
-		}
-
-		diags = diags.Append(node.writeResourceInstanceState(ctx, decoded, workingState))
-		log.Printf("[INFO] graphNodeAllocator: wrote %s", r.addr)
+	ris := states.ResourceInstanceObjectSrc{
+		SchemaVersion: n.resource.state.SchemaVersion,
+		AttrsJSON:     n.resource.state.State,
 	}
+
+	schema, _ := schemas.SchemaForResourceAddr(n.resource.addr)
+	// Not sure how to avoid unmarshaling here
+	decoded, err := ris.Decode(schema.ImpliedType())
+	if err != nil {
+		return diags.Append(err)
+	}
+
+	decoded.Status = states.ObjectReady
+	decoded.Imported = true
+
+	addr := n.resource.addr.Instance(addrs.NoKey).Absolute(addrs.RootModuleInstance)
+	node := &NodeAbstractResourceInstance{
+		Addr: addr,
+		NodeAbstractResource: NodeAbstractResource{
+			ResolvedProvider: n.resource.provider,
+		},
+	}
+
+	diags = diags.Append(node.writeResourceInstanceState(ctx, decoded, workingState))
+	log.Printf("[INFO] graphNodeAllocator: wrote %s", n.resource.addr)
 
 	return diags
 }
