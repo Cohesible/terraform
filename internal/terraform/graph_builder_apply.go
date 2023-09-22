@@ -100,6 +100,8 @@ func (b *ApplyGraphBuilder) Steps() []GraphTransformer {
 			ShouldExport: true,
 		},
 
+		&DeallocatorTransformer{Config: b.Config, Skip: b.Operation != walkDestroy},
+
 		// Add dynamic values
 		&RootVariableTransformer{Config: b.Config, RawValues: b.RootVariableValues},
 		&ModuleVariableTransformer{Config: b.Config},
@@ -171,8 +173,6 @@ func (b *ApplyGraphBuilder) Steps() []GraphTransformer {
 			Config: b.Config,
 			State:  b.State,
 		},
-
-		&DeallocatorTransformer{Config: b.Config},
 
 		// We need to remove configuration nodes that are not used at all, as
 		// they may not be able to evaluate, especially during destroy.
