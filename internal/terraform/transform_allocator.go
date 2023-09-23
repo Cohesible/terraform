@@ -271,30 +271,21 @@ func (t *AllocatorTransformer) transformModule(g *Graph, c *configs.Config) erro
 
 	nodes := g.Vertices()
 	for i := 0; i < len(nodes); i++ {
-		// run this in a closure, so we can return early rather than
-		// dealing with complex looping and labels
-		func() {
-			n := nodes[i]
-			switch n := n.(type) {
-			case GraphNodeConfigResource:
-				key := n.ResourceAddr().String()
-				log.Printf("[INFO] allocator: %s ", key)
+		n := nodes[i]
+		switch n := n.(type) {
+		case GraphNodeConfigResource:
+			key := n.ResourceAddr().String()
+			log.Printf("[INFO] allocator: %s ", key)
 
-				if _, exists := (*imported)[key]; !exists {
-					return
-				}
-			default:
-				return
+			if _, exists := (*imported)[key]; !exists {
+				continue
 			}
+		default:
+			continue
+		}
 
-			log.Printf("[INFO] allocator: %s is no longer needed, removing", dag.VertexName(n))
-			g.Remove(n)
-
-			// remove the node from our iteration as well
-			last := len(nodes) - 1
-			nodes[i], nodes[last] = nodes[last], nodes[i]
-			nodes = nodes[:last]
-		}()
+		log.Printf("[INFO] allocator: %s is no longer needed, removing", dag.VertexName(n))
+		g.Remove(n)
 	}
 
 	for _, r := range ir {
