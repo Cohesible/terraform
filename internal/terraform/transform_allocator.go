@@ -15,6 +15,7 @@ import (
 	tfaddr "github.com/hashicorp/terraform-registry-address"
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/configs"
+	"github.com/hashicorp/terraform/internal/configs/configschema"
 	"github.com/hashicorp/terraform/internal/dag"
 	"github.com/hashicorp/terraform/internal/httpclient"
 	"github.com/hashicorp/terraform/internal/providers"
@@ -24,10 +25,12 @@ import (
 )
 
 type Allocator struct {
-	ProvidersMeta map[addrs.Provider]*configs.ProviderMeta
-	Config        *configs.Allocator
-	imported      map[string]ExportedResource
-	shouldDestroy *[]addrs.AbsResource
+	ProvidersMeta      map[addrs.Provider]*configs.ProviderMeta
+	Config             *configs.Allocator
+	imported           map[string]ExportedResource
+	shouldDestroy      *[]addrs.AbsResource
+	providerMetaValues map[addrs.Provider]*cty.Value
+	schemas            map[addrs.Resource]*configschema.Block
 }
 
 func (a *Allocator) ImportState() (ret *map[string]ExportedResource, diags tfdiags.Diagnostics) {
@@ -102,27 +105,17 @@ func (a *Allocator) DestroyResource(ctx EvalContext, addr addrs.Resource) (diags
 		p = initialized
 	}
 
-	schemas, _ := ctx.ProviderSchema(providerAddr)
-
 	// `r.State.Type()` is technically not the correct type
 
-	metaConfigVal := cty.NullVal(cty.DynamicPseudoType)
-	if metaConfig, exists := a.ProvidersMeta[providerAddr.Provider]; exists {
-		// FIXME: this should be cached
-		val, _, configDiags := ctx.EvaluateBlock(metaConfig.Config, schemas.ProviderMeta, nil, EvalDataForNoInstanceKey)
-		diags.Append(configDiags)
-		if diags.HasErrors() {
-			return diags
-		}
-		metaConfigVal = val
-	}
+	metaConfigVal, d := a.GetMeta(ctx, addr, providerAddr)
+	diags.Append(d)
 
 	ris := states.ResourceInstanceObjectSrc{
 		SchemaVersion: r.SchemaVersion,
 		AttrsJSON:     r.State,
 	}
 
-	schema, _ := schemas.SchemaForResourceAddr(addr)
+	schema, _ := a.GetSchema(ctx, addr, providerAddr)
 	// Not sure how to avoid unmarshaling here
 	decoded, err := ris.Decode(schema.ImpliedType())
 	if err != nil {
@@ -136,7 +129,7 @@ func (a *Allocator) DestroyResource(ctx EvalContext, addr addrs.Resource) (diags
 		PriorState:       decoded.Value,
 		ProposedNewState: nullVal,
 		PriorPrivate:     r.PrivateState,
-		ProviderMeta:     metaConfigVal,
+		ProviderMeta:     *metaConfigVal,
 	})
 
 	diags.Append(planResp.Diagnostics)
@@ -150,10 +143,50 @@ func (a *Allocator) DestroyResource(ctx EvalContext, addr addrs.Resource) (diags
 		PlannedState:   planResp.PlannedState,
 		Config:         nullVal,
 		PlannedPrivate: planResp.PlannedPrivate,
-		ProviderMeta:   metaConfigVal,
+		ProviderMeta:   *metaConfigVal,
 	})
 
 	return diags.Append(resp.Diagnostics)
+}
+
+func (a *Allocator) GetSchema(ctx EvalContext, resource addrs.Resource, absProviderConfig addrs.AbsProviderConfig) (s *configschema.Block, diags tfdiags.Diagnostics) {
+	if s, exists := a.schemas[resource]; exists {
+		return s, diags
+	}
+
+	schemas, err := ctx.ProviderSchema(absProviderConfig)
+	if err != nil {
+		return s, diags.Append(err)
+	}
+
+	schema, _ := schemas.SchemaForResourceAddr(resource)
+
+	a.schemas[resource] = schema
+
+	return schema, diags
+}
+
+func (a *Allocator) GetMeta(ctx EvalContext, resource addrs.Resource, absProviderConfig addrs.AbsProviderConfig) (v *cty.Value, diags tfdiags.Diagnostics) {
+	if m, exists := a.providerMetaValues[absProviderConfig.Provider]; exists {
+		return m, diags
+	}
+	schemas, _ := ctx.ProviderSchema(absProviderConfig)
+
+	metaConfigVal := cty.NullVal(cty.DynamicPseudoType)
+	if metaConfig, exists := a.ProvidersMeta[absProviderConfig.Provider]; exists {
+		// FIXME: this should be cached
+		val, _, configDiags := ctx.EvaluateBlock(metaConfig.Config, schemas.ProviderMeta, nil, EvalDataForNoInstanceKey)
+		diags.Append(configDiags)
+		if diags.HasErrors() {
+			return v, diags
+		}
+		metaConfigVal = val
+	}
+
+	v = &metaConfigVal
+	a.providerMetaValues[absProviderConfig.Provider] = v
+
+	return v, diags
 }
 
 //
@@ -209,7 +242,12 @@ func getAllocator(config *configs.Allocator) *Allocator {
 		return allocator
 	}
 
-	allocator = &Allocator{Config: config}
+	allocator = &Allocator{
+		Config:             config,
+		providerMetaValues: map[tfaddr.Provider]*cty.Value{},
+		schemas:            map[addrs.Resource]*configschema.Block{},
+	}
+
 	return allocator
 }
 
@@ -639,13 +677,11 @@ func (n *graphNodeResourceAllocator) Execute(ctx EvalContext, op walkOperation) 
 		return diags
 	}
 
-	schemas, _ := ctx.ProviderSchema(n.resource.provider)
-
 	ris := states.ResourceInstanceObjectSrc{
 		SchemaVersion: n.resource.state.SchemaVersion,
 		AttrsJSON:     n.resource.state.State,
 	}
-
+	schemas, _ := ctx.ProviderSchema(n.resource.provider)
 	schema, _ := schemas.SchemaForResourceAddr(n.resource.addr)
 	// Not sure how to avoid unmarshaling here
 	decoded, err := ris.Decode(schema.ImpliedType())
