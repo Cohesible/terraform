@@ -206,6 +206,9 @@ func (ctx *BuiltinEvalContext) ConfigureProvider(addr addrs.AbsProviderConfig, c
 		return diags
 	}
 
+	ctx.ProviderLock.Lock()
+	defer ctx.ProviderLock.Unlock()
+
 	req := providers.ConfigureProviderRequest{
 		TerraformVersion: version.String(),
 		Config:           cfg,
