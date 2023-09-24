@@ -34,11 +34,16 @@ type cachedSchema struct {
 	version uint64
 }
 
+type pendingDestroy struct {
+	TransactionId string
+	Resource      addrs.AbsResource
+}
+
 type Allocator struct {
 	ProvidersMeta      map[addrs.Provider]*configs.ProviderMeta
 	Config             *configs.Config
-	imported           map[string]ExportedResource
-	shouldDestroy      *[]addrs.AbsResource
+	imported           *map[string]ExportedResource
+	pendingDestroy     *map[string]pendingDestroy
 	providerMetaValues map[addrs.Provider]*cty.Value
 	schemas            map[addrs.Resource]cachedSchema
 	endpoint           string
@@ -68,7 +73,7 @@ func createAllocator(c *configs.Config) (*Allocator, error) {
 
 func (a *Allocator) ImportState() (ret *map[string]ExportedResource, diags tfdiags.Diagnostics) {
 	if a.imported != nil {
-		return &a.imported, nil
+		return a.imported, nil
 	}
 
 	resources := a.resources
@@ -94,16 +99,14 @@ func (a *Allocator) ImportState() (ret *map[string]ExportedResource, diags tfdia
 		return nil, diags.Append(d)
 	}
 
-	a.imported = map[string]ExportedResource{}
+	a.imported = &map[string]ExportedResource{}
 
 	for key, r := range importResp.Resources {
 		log.Printf("[INFO] graphNodeAllocator: imported %s", key)
-		a.imported[key] = r
+		(*a.imported)[key] = r
 	}
 
-	ret = &a.imported
-
-	return ret, nil
+	return a.imported, nil
 }
 
 type ApplyResult struct {
@@ -525,7 +528,23 @@ func (a *Allocator) configureProvider(ctx EvalContext, addr addrs.AbsProviderCon
 	return diags
 }
 
-func (a *Allocator) DestroyResource(ctx EvalContext, addr addrs.Resource) (diags tfdiags.Diagnostics) {
+type ackRequest struct {
+	TransactionId string `json:"transactionId"`
+}
+
+func (a *Allocator) ackDestroy(txid string) (diags tfdiags.Diagnostics) {
+	url, d := makeUrl(a.endpoint, a.scope, "ack")
+	if d.HasErrors() {
+		return diags.Append(d)
+	}
+
+	req := ackRequest{TransactionId: txid}
+	resp := &empty{}
+
+	return sendRequest(url, req, resp)
+}
+
+func (a *Allocator) destroyResource(ctx EvalContext, addr addrs.Resource) (diags tfdiags.Diagnostics) {
 	log.Printf("[INFO] allocator: destroying resource %s", addr)
 
 	if a.imported == nil {
@@ -533,7 +552,7 @@ func (a *Allocator) DestroyResource(ctx EvalContext, addr addrs.Resource) (diags
 	}
 
 	key := addr.String()
-	r, exists := a.imported[key]
+	r, exists := (*a.imported)[key]
 	if !exists {
 		return diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
@@ -646,6 +665,7 @@ func (a *Allocator) GetMeta(ctx EvalContext, resource addrs.Resource, absProvide
 //
 
 type graphNodeResourceDestroyer struct {
+	txid               string
 	config             *configs.Resource
 	allocator          *Allocator
 	target             addrs.Resource
@@ -660,7 +680,14 @@ func (n *graphNodeResourceDestroyer) Name() string {
 
 // Execute implements GraphNodeExecutable.
 func (n *graphNodeResourceDestroyer) Execute(ctx EvalContext, op walkOperation) tfdiags.Diagnostics {
-	return n.allocator.DestroyResource(ctx, n.target)
+	diags := n.allocator.destroyResource(ctx, n.target)
+	if diags.HasErrors() {
+		return diags
+	}
+
+	log.Printf("[INFO] %s (destroy): sending ack", n.target)
+
+	return n.allocator.ackDestroy(n.txid)
 }
 
 // ModulePath implements GraphNodeProviderConsumer.
@@ -696,12 +723,14 @@ func GetAllocator(config *configs.Config) *Allocator {
 		return allocator
 	}
 
-	allocator, err := createAllocator(config)
+	a, err := createAllocator(config)
 	if err != nil {
 		panic(err)
 	}
 
-	return allocator
+	allocator = a
+
+	return a
 }
 
 type AllocatorTransformer struct {
@@ -824,12 +853,13 @@ func (t *DeallocatorTransformer) transformModule(g *Graph, c *configs.Config) er
 
 	log.Printf("[INFO] allocator: planning to destroy %d resources", len(shouldDestroy))
 
-	for _, r := range shouldDestroy {
-		config := c.Root.Module.ResourceByAddr(r.Resource)
+	for _, tx := range shouldDestroy {
+		config := c.Root.Module.ResourceByAddr(tx.Resource.Resource)
 		g.Add(&graphNodeResourceDestroyer{
+			txid:               tx.TransactionId,
 			config:             config,
 			allocator:          GetAllocator(c),
-			target:             r.Resource,
+			target:             tx.Resource.Resource,
 			providerAddr:       config.Provider,
 			providerConfigAddr: config.ProviderConfigAddr(),
 			absProviderConfig:  c.ResolveAbsProviderAddr(config.ProviderConfigAddr(), addrs.RootModule),
@@ -1045,13 +1075,17 @@ type allocatorUnrefRequest struct {
 
 // FIXME: this is not really a good architecture but it's easy to implement
 type allocatorUnrefResponse struct {
-	ShouldDestroy []string `json:"shouldDestroy"`
+	TransactionId string `json:"transactionId"`
+	// Maps resource -> txid
+	ShouldDestroy map[string]string `json:"shouldDestroy"`
 }
 
-func (a *Allocator) Unref() (shouldDestroy []addrs.AbsResource, diags tfdiags.Diagnostics) {
-	if a.shouldDestroy != nil {
-		return *a.shouldDestroy, diags
+func (a *Allocator) Unref() (shouldDestroy map[string]pendingDestroy, diags tfdiags.Diagnostics) {
+	if a.pendingDestroy != nil {
+		return *a.pendingDestroy, diags
 	}
+
+	a.pendingDestroy = &map[string]pendingDestroy{}
 
 	req := allocatorUnrefRequest{
 		Module: a.module,
@@ -1069,21 +1103,20 @@ func (a *Allocator) Unref() (shouldDestroy []addrs.AbsResource, diags tfdiags.Di
 	}
 
 	// TODO: how to make this work in parallel?
-	if len(resp.ShouldDestroy) > 0 {
-		for _, r := range resp.ShouldDestroy {
-			addr, addrDiags := addrs.ParseAbsResourceStr(r)
-			diags = diags.Append(addrDiags)
-			if diags.HasErrors() {
-				return shouldDestroy, diags
-			}
+	for r, txid := range resp.ShouldDestroy {
+		addr, addrDiags := addrs.ParseAbsResourceStr(r)
+		diags = diags.Append(addrDiags)
+		if diags.HasErrors() {
+			return shouldDestroy, diags
+		}
 
-			shouldDestroy = append(shouldDestroy, addr)
+		(*a.pendingDestroy)[r] = pendingDestroy{
+			TransactionId: txid,
+			Resource:      addr,
 		}
 	}
 
-	a.shouldDestroy = &shouldDestroy
-
-	return shouldDestroy, diags
+	return *a.pendingDestroy, diags
 }
 
 type graphNodeResourceAllocator struct {
