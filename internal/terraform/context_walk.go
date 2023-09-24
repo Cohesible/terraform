@@ -62,6 +62,13 @@ func (c *Context) walk(graph *Graph, operation walkOperation, opts *graphWalkOpt
 	return walker, diags
 }
 
+func (c *Context) GraphWalker(state *states.State, config *configs.Config) *ContextGraphWalker {
+	return c.graphWalker(walkApply, &graphWalkOpts{
+		InputState: state,
+		Config:     config,
+	})
+}
+
 func (c *Context) graphWalker(operation walkOperation, opts *graphWalkOpts) *ContextGraphWalker {
 	var state *states.SyncState
 	var refreshState *states.SyncState

@@ -286,7 +286,10 @@ func (c *TestCommand) prepareSuiteDir(ctx context.Context, suiteName string) (te
 		return suiteDirs, diags
 	}
 	suiteDirs.Config = cfg
-
+	// For test suites we only retain the "locks" in memory for the duration
+	// for one run, just to make sure that we use the same providers when we
+	// eventually run the test suite.
+	locks := depsfile.NewLocks()
 	// With the full configuration tree available, we can now install
 	// the necessary providers. We'll use a separate local cache directory
 	// here, because the test configuration might have additional requirements
@@ -294,7 +297,7 @@ func (c *TestCommand) prepareSuiteDir(ctx context.Context, suiteName string) (te
 	suiteDirs.ProvidersDir = filepath.Join(configDir, ".terraform", "providers")
 	os.MkdirAll(suiteDirs.ProvidersDir, 0755) // if this fails then we'll ignore it and operations below fail instead
 	localCacheDir := providercache.NewDir(suiteDirs.ProvidersDir)
-	providerInst := c.providerInstaller().Clone(localCacheDir)
+	providerInst := c.providerInstaller(locks).Clone(localCacheDir)
 	if !providerInst.HasGlobalCacheDir() {
 		// If the user already configured a global cache directory then we'll
 		// just use it for caching the test providers too, because then we
@@ -319,10 +322,6 @@ func (c *TestCommand) prepareSuiteDir(ctx context.Context, suiteName string) (te
 		return suiteDirs, diags
 	}
 
-	// For test suites we only retain the "locks" in memory for the duration
-	// for one run, just to make sure that we use the same providers when we
-	// eventually run the test suite.
-	locks := depsfile.NewLocks()
 	evts := &providercache.InstallerEvents{
 		QueryPackagesFailure: func(provider addrs.Provider, err error) {
 			if err != nil && addrs.IsDefaultProvider(provider) && provider.Type == "test" {
@@ -339,7 +338,7 @@ func (c *TestCommand) prepareSuiteDir(ctx context.Context, suiteName string) (te
 		},
 	}
 	ctx = evts.OnContext(ctx)
-	locks, err = providerInst.EnsureProviderVersions(ctx, locks, reqs, providercache.InstallUpgrades)
+	locks, err = providerInst.EnsureProviderVersions(ctx, reqs, providercache.InstallUpgrades)
 	if err != nil {
 		diags = diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,

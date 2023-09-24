@@ -12,7 +12,9 @@ import (
 
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/configs"
+	"github.com/hashicorp/terraform/internal/depsfile"
 	"github.com/hashicorp/terraform/internal/logging"
+	"github.com/hashicorp/terraform/internal/providercache"
 	"github.com/hashicorp/terraform/internal/providers"
 	"github.com/hashicorp/terraform/internal/provisioners"
 	"github.com/hashicorp/terraform/internal/states"
@@ -36,11 +38,13 @@ const (
 // ContextOpts are the user-configurable options to create a context with
 // NewContext.
 type ContextOpts struct {
-	Meta         *ContextMeta
-	Hooks        []Hook
-	Parallelism  int
-	Providers    map[addrs.Provider]providers.Factory
-	Provisioners map[string]provisioners.Factory
+	Meta            *ContextMeta
+	Hooks           []Hook
+	Parallelism     int
+	Providers       map[addrs.Provider]providers.Factory
+	Provisioners    map[string]provisioners.Factory
+	Installer       *providercache.Installer
+	PersistLockFile func(*depsfile.Locks) tfdiags.Diagnostics
 
 	UIInput UIInput
 }
@@ -128,7 +132,7 @@ func NewContext(opts *ContextOpts) (*Context, tfdiags.Diagnostics) {
 		par = 10
 	}
 
-	plugins := newContextPlugins(opts.Providers, opts.Provisioners)
+	plugins := newContextPlugins(opts.Providers, opts.Provisioners, opts.Installer, opts.PersistLockFile)
 
 	log.Printf("[TRACE] terraform.NewContext: complete")
 

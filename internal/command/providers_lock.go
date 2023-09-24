@@ -242,9 +242,9 @@ func (c *ProvidersLockCommand) Run(args []string) int {
 		ctx := evts.OnContext(ctx)
 
 		dir := providercache.NewDirWithPlatform(tempDir, platform)
-		installer := providercache.NewInstaller(dir, source)
+		installer := providercache.NewInstaller(dir, source, oldLocks)
 
-		newLocks, err := installer.EnsureProviderVersions(ctx, oldLocks, reqs, providercache.InstallNewProvidersForce)
+		newLocks, err := installer.EnsureProviderVersions(ctx, reqs, providercache.InstallNewProvidersForce)
 		if err != nil {
 			diags = diags.Append(tfdiags.Sourceless(
 				tfdiags.Error,

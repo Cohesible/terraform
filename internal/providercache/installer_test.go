@@ -2215,15 +2215,14 @@ func TestEnsureProviderVersions(t *testing.T) {
 			if source == nil {
 				source = getproviders.NewMockSource(nil, nil)
 			}
-			inst := NewInstaller(outputDir, source)
-			if test.Prepare != nil {
-				test.Prepare(t, inst, outputDir)
-			} /* boop */
-
 			locks, lockDiags := depsfile.LoadLocksFromBytes([]byte(test.LockFile), "test.lock.hcl")
 			if lockDiags.HasErrors() {
 				t.Fatalf("invalid lock file: %s", lockDiags.Err().Error())
 			}
+			inst := NewInstaller(outputDir, source, locks)
+			if test.Prepare != nil {
+				test.Prepare(t, inst, outputDir)
+			} /* boop */
 
 			providerEvents := make(map[addrs.Provider][]*testInstallerEventLogItem)
 			eventsCh := make(chan *testInstallerEventLogItem)
@@ -2232,7 +2231,7 @@ func TestEnsureProviderVersions(t *testing.T) {
 			go func(ch chan *testInstallerEventLogItem) {
 				events := installerLogEventsForTests(ch)
 				ctx := events.OnContext(ctx)
-				newLocks, instErr = inst.EnsureProviderVersions(ctx, locks, test.Reqs, test.Mode)
+				newLocks, instErr = inst.EnsureProviderVersions(ctx, test.Reqs, test.Mode)
 				close(eventsCh) // exits the event loop below
 			}(eventsCh)
 			for evt := range eventsCh {
@@ -2282,7 +2281,7 @@ func TestEnsureProviderVersions_local_source(t *testing.T) {
 	// set up the installer using the temporary directory and filesystem source
 	platform := getproviders.Platform{OS: "linux", Arch: "amd64"}
 	dir := NewDirWithPlatform(tmpDirPath, platform)
-	installer := NewInstaller(dir, source)
+	installer := NewInstaller(dir, source, depsfile.NewLocks())
 
 	tests := map[string]struct {
 		provider string
@@ -2326,7 +2325,7 @@ func TestEnsureProviderVersions_local_source(t *testing.T) {
 				provider: versionConstraint,
 			}
 
-			newLocks, err := installer.EnsureProviderVersions(ctx, depsfile.NewLocks(), reqs, InstallNewProvidersOnly)
+			newLocks, err := installer.EnsureProviderVersions(ctx, reqs, InstallNewProvidersOnly)
 			gotProviderlocks := newLocks.AllProviders()
 			wantProviderLocks := map[addrs.Provider]*depsfile.ProviderLock{
 				provider: depsfile.NewProviderLock(
@@ -2384,7 +2383,7 @@ func TestEnsureProviderVersions_protocol_errors(t *testing.T) {
 	// set up the installer using the temporary directory and mock source
 	platform := getproviders.Platform{OS: "gameboy", Arch: "lr35902"}
 	dir := NewDirWithPlatform(tmpDirPath, platform)
-	installer := NewInstaller(dir, source)
+	installer := NewInstaller(dir, source, depsfile.NewLocks())
 
 	tests := map[string]struct {
 		provider     addrs.Provider
@@ -2414,7 +2413,7 @@ func TestEnsureProviderVersions_protocol_errors(t *testing.T) {
 				test.provider: test.inputVersion,
 			}
 			ctx := context.TODO()
-			_, err := installer.EnsureProviderVersions(ctx, depsfile.NewLocks(), reqs, InstallNewProvidersOnly)
+			_, err := installer.EnsureProviderVersions(ctx, reqs, InstallNewProvidersOnly)
 
 			switch err := err.(type) {
 			case nil:

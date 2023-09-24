@@ -11,10 +11,12 @@ import (
 	"os"
 	"strings"
 
+	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/backend"
 	"github.com/hashicorp/terraform/internal/command/arguments"
 	"github.com/hashicorp/terraform/internal/command/clistate"
 	"github.com/hashicorp/terraform/internal/command/views"
+	"github.com/hashicorp/terraform/internal/terraform"
 	"github.com/hashicorp/terraform/internal/tfdiags"
 )
 
@@ -92,8 +94,6 @@ func (c *StartSessionCommand) Run(rawArgs []string) int {
 
 	stateLockerView := views.NewStateLocker(arguments.ViewHuman, c.View)
 	locker := clistate.NewLocker(0, stateLockerView).WithContext(context.Background())
-
-	log.Printf("[TRACE] backend/local: requesting state lock for workspace %q", workspace)
 	if diags := locker.Lock(s, "session"); diags.HasErrors() {
 		view.Diagnostics(diags)
 		return 1
@@ -171,7 +171,7 @@ func (c *StartSessionCommand) OperationRequest(
 	var err error
 	opReq.ConfigLoader, err = c.initConfigLoader()
 	if err != nil {
-		diags = diags.Append(fmt.Errorf("Failed to initialize config loader: %s", err))
+		diags = diags.Append(fmt.Errorf("failed to initialize config loader: %s", err))
 		return nil, diags
 	}
 
@@ -238,9 +238,40 @@ func (c *StartSessionCommand) handleInput(be backend.Enhanced, args *arguments.S
 func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enhanced, args *arguments.StartSession) int {
 	var first_apply = true
 	scanner := bufio.NewScanner(os.Stdin)
+	ops, _ := c.contextOpts()
+	tfCtx, _ := terraform.NewContext(ops)
+
+	// scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	// 	if len(data) >= 3 && data[0] == 27 && data[1] == 91 && (data[2] >= 65 && data[2] <= 68) {
+	// 		return 3, []byte{data[2]}, nil
+	// 	}
+
+	// 	return bufio.ScanLines(data, atEOF)
+	// })
+
+	//history := []string{}
+
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "apply" {
+		token := scanner.Text()
+		// if len(token) == 1 {
+		// 	switch token[0] {
+		// 	case 65:
+		// 		log.Println("up")
+		// 	case 66:
+		// 		log.Println("down")
+		// 	case 67:
+		// 		log.Println("right")
+		// 	case 68:
+		// 		log.Println("left")
+		// 	}
+
+		// 	continue
+		// }
+
+		line := strings.TrimSpace(token)
+		parts := strings.Split(line, " ")
+		switch parts[0] {
+		case "apply":
 			args.Operation.Refresh = first_apply
 			result := c.handleInput(be, args)
 			first_apply = false
@@ -252,7 +283,49 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 			// Dump the config cache
 			c.configLoader = nil
 			view.Ready()
-		} else if line == "exit" {
+		case "apply_config":
+			rAddr, d := addrs.ParseAbsResourceStr(parts[1])
+			if d.HasErrors() {
+				view.Diagnostics(d)
+				continue
+			}
+
+			config, d := c.loadConfig(".")
+			if d.HasErrors() {
+				view.Diagnostics(d)
+				continue
+			}
+
+			sm, _ := be.StateMgr(backend.DefaultStateName)
+			err := sm.RefreshState()
+			if err != nil {
+				view.Diagnostics(tfdiags.Diagnostics{}.Append(err))
+				continue
+			}
+			s := sm.State()
+			walker := tfCtx.GraphWalker(s, config)
+			a := terraform.GetAllocator(config)
+			ctx := walker.EvalContext().WithPath(addrs.RootModuleInstance)
+			rConfig := config.Module.ResourceByAddr(rAddr.Resource)
+			result, d := a.Apply(ctx, rAddr.Resource, rConfig)
+			if d.HasErrors() {
+				view.Diagnostics(d)
+				continue
+			}
+
+			encoded, err := result.State.Encode(result.Schema.ImpliedType(), result.SchemaVersion)
+			if err != nil {
+				view.Diagnostics(tfdiags.Diagnostics{}.Append(err))
+				continue
+			}
+			providerAddr := config.ResolveAbsProviderAddr(rConfig.ProviderConfigAddr(), addrs.RootModule)
+			s.RootModule().SetResourceInstanceCurrent(rAddr.Resource.Instance(addrs.NoKey), encoded, providerAddr)
+			sm.WriteState(s)
+			sm.RefreshState()
+
+			// Dump the config cache
+			c.configLoader = nil
+		case "exit":
 			return 0
 		}
 	}

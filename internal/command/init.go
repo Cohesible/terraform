@@ -517,14 +517,14 @@ func (c *InitCommand) getProviders(config *configs.Config, state *states.State, 
 	if len(pluginDirs) == 0 {
 		// By default we use a source that looks for providers in all of the
 		// standard locations, possibly customized by the user in CLI config.
-		inst = c.providerInstaller()
+		inst = c.providerInstaller(previousLocks)
 	} else {
 		// If the user passes at least one -plugin-dir then that circumvents
 		// the usual sources and forces Terraform to consult only the given
 		// directories. Anything not available in one of those directories
 		// is not available for installation.
 		source := c.providerCustomLocalDirectorySource(pluginDirs)
-		inst = c.providerInstallerCustomSource(source)
+		inst = c.providerInstallerCustomSource(previousLocks, source)
 
 		// The default (or configured) search paths are logged earlier, in provider_source.go
 		// Log that those are being overridden by the `-plugin-dir` command line options
@@ -843,7 +843,7 @@ func (c *InitCommand) getProviders(config *configs.Config, state *states.State, 
 
 		mode = providercache.InstallUpgrades
 	}
-	newLocks, err := inst.EnsureProviderVersions(ctx, previousLocks, reqs, mode)
+	newLocks, err := inst.EnsureProviderVersions(ctx, reqs, mode)
 	if ctx.Err() == context.Canceled {
 		c.showDiagnostics(diags)
 		c.Ui.Error("Provider installation was canceled by an interrupt signal.")

@@ -16,6 +16,7 @@ import (
 
 	"github.com/hashicorp/terraform/internal/addrs"
 	terraformProvider "github.com/hashicorp/terraform/internal/builtin/providers/terraform"
+	"github.com/hashicorp/terraform/internal/depsfile"
 	"github.com/hashicorp/terraform/internal/getproviders"
 	"github.com/hashicorp/terraform/internal/logging"
 	"github.com/hashicorp/terraform/internal/moduletest"
@@ -33,6 +34,15 @@ import (
 // This is not intended to be set by end-users.
 var enableProviderAutoMTLS = os.Getenv("TF_DISABLE_PLUGIN_TLS") == ""
 
+func (m *Meta) DefaultInstaller() (*providercache.Installer, tfdiags.Diagnostics) {
+	locks, d := m.lockedDependencies()
+	if d.HasErrors() {
+		return nil, d
+	}
+
+	return m.providerInstallerCustomSource(locks, m.providerInstallSource()), nil
+}
+
 // providerInstaller returns an object that knows how to install providers and
 // how to recover the selections from a prior installation process.
 //
@@ -44,8 +54,8 @@ var enableProviderAutoMTLS = os.Getenv("TF_DISABLE_PLUGIN_TLS") == ""
 // because objects inside contain caches that must be maintained properly.
 // Because this method wraps a result from providerLocalCacheDir, that
 // limitation applies also to results from that method.
-func (m *Meta) providerInstaller() *providercache.Installer {
-	return m.providerInstallerCustomSource(m.providerInstallSource())
+func (m *Meta) providerInstaller(locks *depsfile.Locks) *providercache.Installer {
+	return m.providerInstallerCustomSource(locks, m.providerInstallSource())
 }
 
 // providerInstallerCustomSource is a variant of providerInstaller that
@@ -60,10 +70,10 @@ func (m *Meta) providerInstaller() *providercache.Installer {
 // during EnsureProviderVersions. A caller that doesn't call
 // EnsureProviderVersions (anything other than "terraform init") can safely
 // just use the providerInstaller method unconditionally.
-func (m *Meta) providerInstallerCustomSource(source getproviders.Source) *providercache.Installer {
+func (m *Meta) providerInstallerCustomSource(locks *depsfile.Locks, source getproviders.Source) *providercache.Installer {
 	targetDir := m.providerLocalCacheDir()
 	globalCacheDir := m.providerGlobalCacheDir()
-	inst := providercache.NewInstaller(targetDir, source)
+	inst := providercache.NewInstaller(targetDir, source, locks)
 	if globalCacheDir != nil {
 		inst.SetGlobalCacheDir(globalCacheDir)
 		inst.SetGlobalCacheDirMayBreakDependencyLockFile(m.PluginCacheMayBreakDependencyLockFile)

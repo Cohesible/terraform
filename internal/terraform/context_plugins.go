@@ -4,14 +4,20 @@
 package terraform
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sync"
 
+	"github.com/apparentlymart/go-versions/versions"
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/configs/configschema"
+	"github.com/hashicorp/terraform/internal/depsfile"
+	"github.com/hashicorp/terraform/internal/getproviders"
+	"github.com/hashicorp/terraform/internal/providercache"
 	"github.com/hashicorp/terraform/internal/providers"
 	"github.com/hashicorp/terraform/internal/provisioners"
+	"github.com/hashicorp/terraform/internal/tfdiags"
 )
 
 type CachedProvider struct {
@@ -36,12 +42,21 @@ type contextPlugins struct {
 	providerSchemas    map[addrs.Provider]*ProviderSchema
 	provisionerSchemas map[string]*configschema.Block
 	schemasLock        sync.Mutex
+	installer          *providercache.Installer
+	persistLockFile    func(*depsfile.Locks) tfdiags.Diagnostics
 }
 
-func newContextPlugins(providerFactories map[addrs.Provider]providers.Factory, provisionerFactories map[string]provisioners.Factory) *contextPlugins {
+func newContextPlugins(
+	providerFactories map[addrs.Provider]providers.Factory,
+	provisionerFactories map[string]provisioners.Factory,
+	installer *providercache.Installer,
+	persistLockFile func(*depsfile.Locks) tfdiags.Diagnostics,
+) *contextPlugins {
 	ret := &contextPlugins{
 		providerFactories:    providerFactories,
 		provisionerFactories: provisionerFactories,
+		installer:            installer,
+		persistLockFile:      persistLockFile,
 	}
 	ret.init()
 	return ret
@@ -51,6 +66,20 @@ func (cp *contextPlugins) init() {
 	cp.ProviderCache = map[string]*CachedProvider{}
 	cp.providerSchemas = make(map[addrs.Provider]*ProviderSchema, len(cp.providerFactories))
 	cp.provisionerSchemas = make(map[string]*configschema.Block, len(cp.provisionerFactories))
+}
+
+func (cp *contextPlugins) InstallProvider(ctx context.Context, addr addrs.Provider, version versions.Version, platform getproviders.Platform) error {
+	locks, err := cp.installer.InstallProvider(ctx, addr, version, platform)
+	if err != nil {
+		return err
+	}
+
+	diags := cp.persistLockFile(locks)
+	if diags.HasErrors() {
+		return diags.Err()
+	}
+
+	return nil
 }
 
 func (cp *contextPlugins) HasProvider(addr addrs.Provider) bool {
@@ -124,9 +153,10 @@ func (cp *contextPlugins) ProviderSchema(addr addrs.Provider) (*ProviderSchema, 
 	}
 
 	for t, r := range resp.ResourceTypes {
-		if err := r.Block.InternalValidate(); err != nil {
-			return nil, fmt.Errorf("provider %s has invalid schema for managed resource type %q, which is a bug in the provider: %q", addr, t, err)
-		}
+		// TODO: lazy validation
+		// if err := r.Block.InternalValidate(); err != nil {
+		// 	return nil, fmt.Errorf("provider %s has invalid schema for managed resource type %q, which is a bug in the provider: %q", addr, t, err)
+		// }
 		s.ResourceTypes[t] = r.Block
 		s.ResourceTypeSchemaVersions[t] = uint64(r.Version)
 		if r.Version < 0 {
@@ -135,9 +165,10 @@ func (cp *contextPlugins) ProviderSchema(addr addrs.Provider) (*ProviderSchema, 
 	}
 
 	for t, d := range resp.DataSources {
-		if err := d.Block.InternalValidate(); err != nil {
-			return nil, fmt.Errorf("provider %s has invalid schema for data resource type %q, which is a bug in the provider: %q", addr, t, err)
-		}
+		// TODO: lazy validation
+		// if err := d.Block.InternalValidate(); err != nil {
+		// 	return nil, fmt.Errorf("provider %s has invalid schema for data resource type %q, which is a bug in the provider: %q", addr, t, err)
+		// }
 		s.DataSources[t] = d.Block
 		if d.Version < 0 {
 			// We're not using the version numbers here yet, but we'll check

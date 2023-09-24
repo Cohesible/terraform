@@ -506,6 +506,14 @@ func (m *Meta) contextOpts() (*terraform.ContextOpts, error) {
 		OriginalWorkingDir: m.WorkingDir.OriginalWorkingDir(),
 	}
 
+	installer, diags := m.DefaultInstaller()
+	if diags.HasErrors() {
+		return nil, diags.Err()
+	}
+
+	opts.Installer = installer
+	opts.PersistLockFile = m.replaceLockedDependencies
+
 	return &opts, err
 }
 
