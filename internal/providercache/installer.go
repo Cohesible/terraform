@@ -381,8 +381,14 @@ NeedProvider:
 func (i *Installer) InstallProvider(ctx context.Context, provider tfaddr.Provider, version versions.Version, targetPlatform getproviders.Platform) (*depsfile.Locks, error) {
 	lock := i.locks.Provider(provider)
 	var preferredHashes []getproviders.Hash
+	var constraints getproviders.VersionConstraints
+
 	if lock != nil && lock.Version() == version { // hash changes are expected if the version is also changing
 		preferredHashes = lock.PreferredHashes()
+	}
+
+	if lock != nil {
+		constraints = lock.VersionConstraints()
 	}
 
 	// If our target directory already has the provider version that fulfills the lock file, carry on
@@ -492,7 +498,7 @@ func (i *Installer) InstallProvider(ctx context.Context, provider tfaddr.Provide
 					return nil, err
 				}
 
-				i.locks.SetProvider(provider, version, lock.VersionConstraints(), append(preferredHashes, newHash))
+				i.locks.SetProvider(provider, version, constraints, append(preferredHashes, newHash))
 
 				return i.locks, nil
 			}
@@ -581,7 +587,7 @@ func (i *Installer) InstallProvider(ctx context.Context, provider tfaddr.Provide
 	newHashes = append(newHashes, newHash)
 	newHashes = append(newHashes, signedHashes...)
 
-	i.locks.SetProvider(provider, version, lock.VersionConstraints(), append(preferredHashes, newHashes...))
+	i.locks.SetProvider(provider, version, constraints, append(preferredHashes, newHashes...))
 
 	return i.locks, nil
 }
