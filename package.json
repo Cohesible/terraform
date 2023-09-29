@@ -1,0 +1,5 @@
+{
+  "devDependencies": {
+    "cloudscript": "file:../cloud-compiler"
+  }
+}

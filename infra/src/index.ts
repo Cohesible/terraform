@@ -3,8 +3,7 @@ import * as fs from 'node:fs/promises'
 import * as http from 'node:https'
 import * as resources from '@cloudscript/resources'
 import { runCommand, Key } from '@cloudscript/signing'
-import { bindFunctionModel, bindObjectModel } from 'cloudscript:core'
-import { myUserClient, userClientPermissions } from '@cloudscript/test-runner/app'
+import { bindFunctionModel } from 'cloudscript:core'
 
 // const downloadDomain = domains.cohesible.createSubdomain('download')
 const bucket = new resources.BlobStore()
@@ -184,7 +183,6 @@ interface ReleaseMetadata {
 }
 
 interface ReleaseOptions {
-    githubToken?: string
     goReleaserPath?: string
     projectDir?: string
 }
@@ -242,7 +240,6 @@ export function createReleaser(
             cwd: rootdir,
             env: {
                 ...process.env,
-                GITHUB_TOKEN: opt?.githubToken ?? process.env['GITHUB_TOKEN'],
                 GPG_FINGERPRINT: signingKey.fingerprint
             }
         })
@@ -306,23 +303,11 @@ export function createReleaser(
 
 const release = createReleaser(signingKey)
 
-bindObjectModel(myUserClient, {
-    createScopedAccessToken: userClientPermissions,
-})
-
 const namespace = 'cohesible'
 const type = 'terraform'
 
 export async function main(projectDir?: string) {
-    const resp = await myUserClient.createScopedAccessToken({
-        repositories: ['cs-terraform'],
-        permissions: { contents: 'write' },
-    })
-
-    return release(namespace, type, {
-        projectDir,
-        githubToken: resp.token,
-    })
+    return release(namespace, type, { projectDir })
 }
 
 // npm run deploy -- --target scaffolding_closure.default

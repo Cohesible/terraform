@@ -30,6 +30,6 @@ coverage.txt
 # Infrastructure
 dist
 infra/dist
-infra/node_modules
+node_modules
 build
 .cloudscript
