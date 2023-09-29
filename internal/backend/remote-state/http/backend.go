@@ -291,8 +291,8 @@ func (b *Backend) Operation(ctx context.Context, op *backend.Operation) (*backen
 	switch op.Type {
 	// case backend.OperationTypeRefresh:
 	// 	f = b.opRefresh
-	// case backend.OperationTypePlan:
-	// 	f = b.opPlan
+	case backend.OperationTypePlan:
+		f = b.opPlan
 	case backend.OperationTypeApply:
 		f = b.opApply
 	default:
