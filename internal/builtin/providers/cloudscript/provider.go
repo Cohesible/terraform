@@ -330,7 +330,7 @@ func (p *CloudScriptProvider) ApplyResourceChange(req providers.ApplyResourceCha
 		return resp
 	}
 
-	if op == "destroy" {
+	if op == "delete" {
 		resp.NewState = req.PlannedState
 		return resp
 	}
