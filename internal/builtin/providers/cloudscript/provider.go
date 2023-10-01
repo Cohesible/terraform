@@ -29,6 +29,12 @@ func (*CloudScriptProvider) ImportResourceState(providers.ImportResourceStateReq
 }
 
 func (p *CloudScriptProvider) sendRequest(req ClientRequest) (cty.Value, error) {
+	req.ProviderConfig = ProviderConfig{
+		BuildDirectory:   p.client.BuildDirectory,
+		OutputDirectory:  p.client.OutputDirectory,
+		WorkingDirectory: p.client.WorkingDirectory,
+	}
+
 	serialized, err := json.Marshal(req)
 	if err != nil {
 		return cty.NilVal, err
@@ -50,25 +56,16 @@ func (p *CloudScriptProvider) sendRequest(req ClientRequest) (cty.Value, error) 
 
 // ReadDataSource implements providers.Interface.
 func (p *CloudScriptProvider) ReadDataSource(req providers.ReadDataSourceRequest) (resp providers.ReadDataSourceResponse) {
-	ty := getIoSchema().Block.ImpliedType()
-	nullVal := cty.NullVal(ty)
-
-	prior, err := ctyjson.SimpleJSONValue{Value: nullVal}.MarshalJSON()
-	if err != nil {
-		resp.Diagnostics = resp.Diagnostics.Append(err)
-		return resp
-	}
-
-	planned, err := ctyjson.SimpleJSONValue{Value: req.Config}.MarshalJSON()
+	input := req.Config.GetAttr("input")
+	planned, err := ctyjson.SimpleJSONValue{Value: input}.MarshalJSON()
 	if err != nil {
 		resp.Diagnostics = resp.Diagnostics.Append(err)
 		return resp
 	}
 
 	clientReq := ClientRequest{
-		TypeName:     req.TypeName,
-		Operation:    "read",
-		PriorState:   prior,
+		TypeName:     req.Config.GetAttr("type").AsString(),
+		Operation:    "data",
 		PlannedState: planned,
 	}
 
@@ -86,8 +83,38 @@ func (p *CloudScriptProvider) ReadDataSource(req providers.ReadDataSourceRequest
 }
 
 // ReadResource implements providers.Interface.
-func (*CloudScriptProvider) ReadResource(req providers.ReadResourceRequest) (resp providers.ReadResourceResponse) {
-	resp.NewState = req.PriorState
+func (p *CloudScriptProvider) ReadResource(req providers.ReadResourceRequest) (resp providers.ReadResourceResponse) {
+	input := req.PriorState.GetAttr("input")
+	priorInput, err := ctyjson.SimpleJSONValue{Value: input}.MarshalJSON()
+	if err != nil {
+		resp.Diagnostics = resp.Diagnostics.Append(err)
+		return resp
+	}
+
+	output := req.PriorState.GetAttr("output")
+	priorOutput, err := ctyjson.SimpleJSONValue{Value: output}.MarshalJSON()
+	if err != nil {
+		resp.Diagnostics = resp.Diagnostics.Append(err)
+		return resp
+	}
+
+	clientReq := ClientRequest{
+		TypeName:   req.PriorState.GetAttr("type").AsString(),
+		Operation:  "read",
+		PriorInput: priorInput,
+		PriorState: priorOutput,
+	}
+
+	val, err := p.sendRequest(clientReq)
+	if err != nil {
+		resp.Diagnostics = resp.Diagnostics.Append(err)
+		return resp
+	}
+
+	state := req.PriorState.AsValueMap()
+	state["output"] = val
+	resp.NewState = cty.ObjectVal(state)
+
 	return resp
 }
 
@@ -129,74 +156,14 @@ func (*CloudScriptProvider) ValidateResourceConfig(providers.ValidateResourceCon
 	return resp
 }
 
-// cloudscriptProviderModel describes the provider data model.
-type cloudscriptProviderModel struct {
-	Endpoint         string
-	WorkingDirectory string
-	OutputDirectory  string
-	BuildDirectory   string
-}
-
 func getProviderSchema() providers.Schema {
 	return providers.Schema{
 		Block: &configschema.Block{
 			Attributes: map[string]*configschema.Attribute{
-				"endpoint":          {Type: cty.String, Required: true},
-				"working_directory": {Type: cty.String, Required: true},
-				"output_directory":  {Type: cty.String, Required: true},
-				"build_directory":   {Type: cty.String, Optional: true},
-			},
-		},
-	}
-}
-
-func getResourceInstanceSchema() providers.Schema {
-	return providers.Schema{
-		Block: &configschema.Block{
-			Attributes: map[string]*configschema.Attribute{
-				"type":    {Type: cty.String, Required: true},
-				"handler": {Type: cty.String, Required: true},
-				"state":   {Type: cty.DynamicPseudoType, Computed: true},
-				"plan":    {Type: cty.DynamicPseudoType, Required: true},
-				"context": {Type: cty.DynamicPseudoType, Required: true},
-			},
-		},
-	}
-}
-
-func getAssetSchema() providers.Schema {
-	return providers.Schema{
-		Block: &configschema.Block{
-			Attributes: map[string]*configschema.Attribute{
-				"path":      {Type: cty.String, Required: true},
-				"type":      {Type: cty.Number, Optional: true},
-				"hash":      {Type: cty.DynamicPseudoType, Computed: true},
-				"file_path": {Type: cty.DynamicPseudoType, Optional: true, Computed: true},
-			},
-		},
-	}
-}
-
-func getClosureSchema() providers.Schema {
-	return providers.Schema{
-		Block: &configschema.Block{
-			Attributes: map[string]*configschema.Attribute{
-				"location":    {Type: cty.String, Optional: true, Computed: true},
-				"destination": {Type: cty.String, Computed: true},
-				"captured":    {Type: cty.DynamicPseudoType, Optional: true},
-				"globals":     {Type: cty.DynamicPseudoType, Optional: true},
-				"options":     {Type: cty.DynamicPseudoType, Optional: true},
-			},
-		},
-	}
-}
-
-func getObjectSchema() providers.Schema {
-	return providers.Schema{
-		Block: &configschema.Block{
-			Attributes: map[string]*configschema.Attribute{
-				"input":  {Type: cty.DynamicPseudoType, Required: true},
-				"output": {Type: cty.DynamicPseudoType, Computed: true},
+				"endpoint":         {Type: cty.String, Required: true},
+				"workingDirectory": {Type: cty.String, Required: true},
+				"outputDirectory":  {Type: cty.String, Required: true},
+				"buildDirectory":   {Type: cty.String, Required: true},
 			},
 		},
 	}
@@ -207,6 +174,7 @@ func getIoSchema() providers.Schema {
 		Version: 0,
 		Block: &configschema.Block{
 			Attributes: map[string]*configschema.Attribute{
+				"type":   {Type: cty.String, Required: true},
 				"input":  {Type: cty.DynamicPseudoType, Required: true},
 				"output": {Type: cty.DynamicPseudoType, Computed: true},
 			},
@@ -226,20 +194,6 @@ func (p *CloudScriptProvider) GetProviderSchema() providers.GetProviderSchemaRes
 	}
 }
 
-func getIntValue(config cty.Value, attr string) int {
-	if config.IsNull() {
-		return 0
-	}
-
-	if val := config.GetAttr(attr); !val.IsNull() {
-		i, _ := val.AsBigFloat().Int64()
-
-		return int(i)
-	}
-
-	panic(fmt.Sprintf("expected a string value at attribute %s", attr))
-}
-
 func getStringValue(config cty.Value, attr string) string {
 	if config.IsNull() {
 		return ""
@@ -252,18 +206,6 @@ func getStringValue(config cty.Value, attr string) string {
 	panic(fmt.Sprintf("expected a string value at attribute %s", attr))
 }
 
-func getJsonObjectValue(config cty.Value, attr string) ctyjson.SimpleJSONValue {
-	if config.IsNull() {
-		return ctyjson.SimpleJSONValue{}
-	}
-
-	if val := config.GetAttr(attr); !val.IsNull() {
-		return ctyjson.SimpleJSONValue{Value: val}
-	}
-
-	panic(fmt.Sprintf("expected a JSON value at attribute %s", attr))
-}
-
 // "/assets"
 // "/provider"
 // "/provider/data"
@@ -272,11 +214,11 @@ func getJsonObjectValue(config cty.Value, attr string) ctyjson.SimpleJSONValue {
 func (p *CloudScriptProvider) ConfigureProvider(req providers.ConfigureProviderRequest) (resp providers.ConfigureProviderResponse) {
 	config := req.Config
 	client := ExampleClient{
-		Endpoint:         getStringValue(config, "endpoint"),
-		WorkingDirectory: getStringValue(config, "working_directory"),
-		OutputDirectory:  getStringValue(config, "output_directory"),
-		BuildDirectory:   getStringValue(config, "build_directory"),
 		HttpClient:       http.DefaultClient,
+		Endpoint:         getStringValue(config, "endpoint"),
+		WorkingDirectory: getStringValue(config, "workingDirectory"),
+		OutputDirectory:  getStringValue(config, "outputDirectory"),
+		BuildDirectory:   getStringValue(config, "buildDirectory"),
 	}
 
 	p.client = &client
@@ -285,6 +227,12 @@ func (p *CloudScriptProvider) ConfigureProvider(req providers.ConfigureProviderR
 }
 
 func (p *CloudScriptProvider) PlanResourceChange(req providers.PlanResourceChangeRequest) (resp providers.PlanResourceChangeResponse) {
+	if req.ProposedNewState.IsNull() {
+		// destroy op
+		resp.PlannedState = req.ProposedNewState
+		return resp
+	}
+
 	planned := req.ProposedNewState.AsValueMap()
 	input := req.ProposedNewState.GetAttr("input")
 
@@ -302,24 +250,51 @@ func (p *CloudScriptProvider) PlanResourceChange(req providers.PlanResourceChang
 	return resp
 }
 
+type ProviderConfig struct {
+	WorkingDirectory string `json:"workingDirectory"`
+	OutputDirectory  string `json:"outputDirectory"`
+	BuildDirectory   string `json:"buildDirectory"`
+}
+
 type ClientRequest struct {
-	TypeName     string          `json:"type"`
-	Operation    string          `json:"operation"`
-	PriorState   json.RawMessage `json:"priorState"`
-	PlannedState json.RawMessage `json:"plannedState"`
+	TypeName       string          `json:"type"`
+	Operation      string          `json:"operation"`
+	PriorInput     json.RawMessage `json:"priorInput,omitempty"`
+	PriorState     json.RawMessage `json:"priorState,omitempty"`
+	PlannedState   json.RawMessage `json:"plannedState"`
+	ProviderConfig ProviderConfig  `json:"providerConfig"`
 }
 
 // ApplyResourceChange takes the planned state for a resource, which may
 // yet contain unknown computed values, and applies the changes returning
 // the final state.
 func (p *CloudScriptProvider) ApplyResourceChange(req providers.ApplyResourceChangeRequest) (resp providers.ApplyResourceChangeResponse) {
-	prior, err := ctyjson.SimpleJSONValue{Value: req.PriorState}.MarshalJSON()
+	priorInput := cty.NilVal
+	priorOutput := cty.NilVal
+
+	if !req.PriorState.IsNull() {
+		priorInput = req.PriorState.GetAttr("input")
+		priorOutput = req.PriorState.GetAttr("output")
+	}
+
+	input, err := ctyjson.SimpleJSONValue{Value: priorInput}.MarshalJSON()
 	if err != nil {
 		resp.Diagnostics = resp.Diagnostics.Append(err)
 		return resp
 	}
 
-	planned, err := ctyjson.SimpleJSONValue{Value: cty.UnknownAsNull(req.PlannedState)}.MarshalJSON()
+	output, err := ctyjson.SimpleJSONValue{Value: priorOutput}.MarshalJSON()
+	if err != nil {
+		resp.Diagnostics = resp.Diagnostics.Append(err)
+		return resp
+	}
+
+	plannedInput := cty.NilVal
+	if !req.PlannedState.IsNull() {
+		plannedInput = req.PlannedState.GetAttr("input")
+	}
+
+	planned, err := ctyjson.SimpleJSONValue{Value: plannedInput}.MarshalJSON()
 	if err != nil {
 		resp.Diagnostics = resp.Diagnostics.Append(err)
 		return resp
@@ -327,23 +302,36 @@ func (p *CloudScriptProvider) ApplyResourceChange(req providers.ApplyResourceCha
 
 	var op string
 	if req.PlannedState.IsNull() {
-		op = "destroy"
+		op = "delete"
 	} else if req.PriorState.IsNull() {
 		op = "create"
 	} else {
 		op = "update"
 	}
 
+	var resourceType string
+	if req.PlannedState.IsNull() {
+		resourceType = req.PriorState.GetAttr("type").AsString()
+	} else {
+		resourceType = req.PlannedState.GetAttr("type").AsString()
+	}
+
 	clientReq := ClientRequest{
-		TypeName:     req.TypeName,
+		TypeName:     resourceType,
 		Operation:    op,
-		PriorState:   prior,
+		PriorInput:   input,
+		PriorState:   output,
 		PlannedState: planned,
 	}
 
 	val, err := p.sendRequest(clientReq)
 	if err != nil {
 		resp.Diagnostics = resp.Diagnostics.Append(err)
+		return resp
+	}
+
+	if op == "destroy" {
+		resp.NewState = req.PlannedState
 		return resp
 	}
 
