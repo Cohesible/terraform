@@ -9,7 +9,6 @@ import (
 	"log"
 
 	"github.com/hashicorp/terraform/internal/backend"
-	"github.com/hashicorp/terraform/internal/genconfig"
 	"github.com/hashicorp/terraform/internal/logging"
 	"github.com/hashicorp/terraform/internal/plans"
 	"github.com/hashicorp/terraform/internal/plans/planfile"
@@ -54,23 +53,6 @@ func (b *Backend) opPlan(
 		return
 	}
 
-	if len(op.GenerateConfigOut) > 0 {
-		if op.PlanMode != plans.NormalMode {
-			diags = diags.Append(tfdiags.Sourceless(
-				tfdiags.Error,
-				"Invalid generate-config-out flag",
-				"Config can only be generated during a normal plan operation, and not during a refresh-only or destroy plan."))
-			op.ReportResult(runningOp, diags)
-			return
-		}
-
-		diags = diags.Append(genconfig.ValidateTargetFile(op.GenerateConfigOut))
-		if diags.HasErrors() {
-			op.ReportResult(runningOp, diags)
-			return
-		}
-	}
-
 	if b.ContextOpts == nil {
 		b.ContextOpts = new(terraform.ContextOpts)
 	}
@@ -103,18 +85,18 @@ func (b *Backend) opPlan(
 	go func() {
 		defer logging.PanicHandler()
 		defer close(doneCh)
-		log.Printf("[INFO] backend/local: plan calling Plan")
+		log.Printf("[INFO] backend/http: plan calling Plan")
 		plan, planDiags = lr.Core.Plan(lr.Config, lr.InputState, lr.PlanOpts)
 	}()
 
 	if b.opWait(doneCh, stopCtx, cancelCtx, lr.Core, opState, op.View) {
 		// If we get in here then the operation was cancelled, which is always
 		// considered to be a failure.
-		log.Printf("[INFO] backend/local: plan operation was force-cancelled by interrupt")
+		log.Printf("[INFO] backend/http: plan operation was force-cancelled by interrupt")
 		runningOp.Result = backend.OperationFailure
 		return
 	}
-	log.Printf("[INFO] backend/local: plan operation completed")
+	log.Printf("[INFO] backend/http: plan operation completed")
 
 	// NOTE: We intentionally don't stop here on errors because we always want
 	// to try to present a partial plan report and, if the user chose to,
@@ -162,7 +144,7 @@ func (b *Backend) opPlan(
 			State: plan.PrevRunState,
 		}
 
-		log.Printf("[INFO] backend/local: writing plan output to: %s", path)
+		log.Printf("[INFO] backend/http: writing plan output to: %s", path)
 		err := planfile.Create(path, planfile.CreateArgs{
 			ConfigSnapshot:       configSnap,
 			PreviousRunStateFile: prevStateFile,

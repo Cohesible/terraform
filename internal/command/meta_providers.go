@@ -15,7 +15,9 @@ import (
 	plugin "github.com/hashicorp/go-plugin"
 
 	"github.com/hashicorp/terraform/internal/addrs"
+	cloudscriptProvider "github.com/hashicorp/terraform/internal/builtin/providers/cloudscript"
 	terraformProvider "github.com/hashicorp/terraform/internal/builtin/providers/terraform"
+
 	"github.com/hashicorp/terraform/internal/depsfile"
 	"github.com/hashicorp/terraform/internal/getproviders"
 	"github.com/hashicorp/terraform/internal/logging"
@@ -350,6 +352,9 @@ func (m *Meta) internalProviders() map[string]providers.Factory {
 	return map[string]providers.Factory{
 		"terraform": func() (providers.Interface, error) {
 			return terraformProvider.NewProvider(), nil
+		},
+		"cloudscript": func() (providers.Interface, error) {
+			return cloudscriptProvider.NewProvider(), nil
 		},
 		"test": func() (providers.Interface, error) {
 			return moduletest.NewProvider(), nil

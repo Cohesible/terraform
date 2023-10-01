@@ -290,7 +290,7 @@ func ParseLegacyAbsProviderConfig(traversal hcl.Traversal) (AbsProviderConfig, t
 	// We always assume legacy-style providers in legacy state ...
 	if tt, ok := remain[1].(hcl.TraverseAttr); ok {
 		// ... unless it's the builtin "terraform" provider, a special case.
-		if tt.Name == "terraform" {
+		if tt.Name == "terraform" || tt.Name == "cloudscript" {
 			ret.Provider = NewBuiltInProvider(tt.Name)
 		} else {
 			ret.Provider = NewLegacyProvider(tt.Name)
