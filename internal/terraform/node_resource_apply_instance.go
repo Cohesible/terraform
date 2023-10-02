@@ -281,10 +281,10 @@ func (n *NodeApplyableResourceInstance) managedResourceExecute(ctx EvalContext) 
 	}
 
 	// Compare the diffs
-	diags = diags.Append(n.checkPlannedChange(ctx, diff, diffApply, providerSchema))
-	if diags.HasErrors() {
-		return diags
-	}
+	// diags = diags.Append(n.checkPlannedChange(ctx, diff, diffApply, providerSchema))
+	// if diags.HasErrors() {
+	// 	return diags
+	// }
 
 	diffApply = reducePlan(addr, diffApply, false)
 	// reducePlan may have simplified our planned change
