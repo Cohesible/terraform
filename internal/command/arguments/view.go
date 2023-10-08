@@ -13,6 +13,8 @@ type View struct {
 	// level of noise when multiple instances of the same warning are raised
 	// for a configuration.
 	CompactWarnings bool
+
+	UseTests bool
 }
 
 // ParseView processes CLI arguments, returning a View value and a
@@ -30,6 +32,8 @@ func ParseView(args []string) (*View, []string) {
 			common.NoColor = true
 		case "-compact-warnings":
 			common.CompactWarnings = true
+		case "-use-tests":
+			common.UseTests = true
 		default:
 			// Unsupported argument: move left to the current position, and
 			// increment the index.

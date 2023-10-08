@@ -18,12 +18,13 @@ import (
 
 // Resource represents a "resource" or "data" block in a module or file.
 type Resource struct {
-	Mode    addrs.ResourceMode
-	Name    string
-	Type    string
-	Config  hcl.Body
-	Count   hcl.Expression
-	ForEach hcl.Expression
+	Mode     addrs.ResourceMode
+	Name     string
+	Type     string
+	Config   hcl.Body
+	Count    hcl.Expression
+	ForEach  hcl.Expression
+	ReadOnly bool
 
 	ProviderConfigRef *ProviderConfigRef
 	Provider          addrs.Provider

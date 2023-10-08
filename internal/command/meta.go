@@ -251,6 +251,7 @@ type Meta struct {
 	reconfigure      bool
 	migrateState     bool
 	compactWarnings  bool
+	useTests         bool
 
 	// Used with commands which write state to allow users to write remote
 	// state even if the remote and local Terraform versions don't match.

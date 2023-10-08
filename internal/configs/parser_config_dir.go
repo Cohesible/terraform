@@ -32,17 +32,29 @@ import (
 // .tf files are parsed using the HCL native syntax while .tf.json files are
 // parsed using the HCL JSON syntax.
 func (p *Parser) LoadConfigDir(path string) (*Module, hcl.Diagnostics) {
-	primaryPaths, overridePaths, diags := p.dirFiles(path)
+	return p.loadConfigDir(path, p.UseTests)
+}
+
+func (p *Parser) loadConfigDir(path string, useTests bool) (*Module, hcl.Diagnostics) {
+	primaryPaths, testPaths, overridePaths, diags := p.dirFiles(path)
 	if diags.HasErrors() {
 		return nil, diags
 	}
 
 	primary, fDiags := p.loadFiles(primaryPaths, false)
 	diags = append(diags, fDiags...)
+
+	var tests []*File
+	if useTests {
+		testFiles, fDiags := p.loadFiles(testPaths, false)
+		diags = append(diags, fDiags...)
+		tests = testFiles
+	}
+
 	override, fDiags := p.loadFiles(overridePaths, true)
 	diags = append(diags, fDiags...)
 
-	mod, modDiags := NewModule(primary, override)
+	mod, modDiags := NewModule(primary, tests, override)
 	diags = append(diags, modDiags...)
 
 	mod.SourceDir = path
@@ -55,7 +67,7 @@ func (p *Parser) LoadConfigDir(path string) (*Module, hcl.Diagnostics) {
 //
 // If the given directory does not exist or cannot be read, error diagnostics
 // are returned. If errors are returned, the resulting lists may be incomplete.
-func (p Parser) ConfigDirFiles(dir string) (primary, override []string, diags hcl.Diagnostics) {
+func (p Parser) ConfigDirFiles(dir string) (primary, tests, override []string, diags hcl.Diagnostics) {
 	return p.dirFiles(dir)
 }
 
@@ -63,7 +75,7 @@ func (p Parser) ConfigDirFiles(dir string) (primary, override []string, diags hc
 // exists and contains at least one Terraform config file (with a .tf or
 // .tf.json extension.)
 func (p *Parser) IsConfigDir(path string) bool {
-	primaryPaths, overridePaths, _ := p.dirFiles(path)
+	primaryPaths, _, overridePaths, _ := p.dirFiles(path)
 	return (len(primaryPaths) + len(overridePaths)) > 0
 }
 
@@ -88,7 +100,7 @@ func (p *Parser) loadFiles(paths []string, override bool) ([]*File, hcl.Diagnost
 	return files, diags
 }
 
-func (p *Parser) dirFiles(dir string) (primary, override []string, diags hcl.Diagnostics) {
+func (p *Parser) dirFiles(dir string) (primary, tests, override []string, diags hcl.Diagnostics) {
 	infos, err := p.fs.ReadDir(dir)
 	if err != nil {
 		diags = append(diags, &hcl.Diagnostic{
@@ -112,10 +124,13 @@ func (p *Parser) dirFiles(dir string) (primary, override []string, diags hcl.Dia
 		}
 
 		baseName := name[:len(name)-len(ext)] // strip extension
+		isTest := ext == ".test.tf.json"
 		isOverride := baseName == "override" || strings.HasSuffix(baseName, "_override")
 
 		fullPath := filepath.Join(dir, name)
-		if isOverride {
+		if isTest {
+			tests = append(tests, fullPath)
+		} else if isOverride {
 			override = append(override, fullPath)
 		} else {
 			primary = append(primary, fullPath)
@@ -130,6 +145,8 @@ func (p *Parser) dirFiles(dir string) (primary, override []string, diags hcl.Dia
 func fileExt(path string) string {
 	if strings.HasSuffix(path, ".tf") {
 		return ".tf"
+	} else if strings.HasSuffix(path, ".test.tf.json") {
+		return ".test.tf.json"
 	} else if strings.HasSuffix(path, ".tf.json") {
 		return ".tf.json"
 	} else {
@@ -157,7 +174,7 @@ func IsEmptyDir(path string) (bool, error) {
 	}
 
 	p := NewParser(nil)
-	fs, os, diags := p.dirFiles(path)
+	fs, _, os, diags := p.dirFiles(path)
 	if diags.HasErrors() {
 		return false, diags
 	}

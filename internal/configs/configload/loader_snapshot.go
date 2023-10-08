@@ -159,7 +159,7 @@ func (l *Loader) makeModuleWalkerSnapshot(snap *Snapshot) configs.ModuleWalker {
 func (l *Loader) addModuleToSnapshot(snap *Snapshot, key string, dir string, sourceAddr string, v *version.Version) hcl.Diagnostics {
 	var diags hcl.Diagnostics
 
-	primaryFiles, overrideFiles, moreDiags := l.parser.ConfigDirFiles(dir)
+	primaryFiles, _, overrideFiles, moreDiags := l.parser.ConfigDirFiles(dir)
 	if moreDiags.HasErrors() {
 		// Any diagnostics we get here should be already present
 		// in diags, so it's weird if we get here but we'll allow it

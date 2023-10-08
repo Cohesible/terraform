@@ -20,6 +20,8 @@ import (
 // "configs" to support installation of modules from remote sources and
 // loading full configurations using modules that were previously installed.
 type Loader struct {
+	useTests bool
+
 	// parser is used to read configuration
 	parser *configs.Parser
 
@@ -31,6 +33,8 @@ type Loader struct {
 // Config is used with NewLoader to specify configuration arguments for the
 // loader.
 type Config struct {
+	UseTests bool
+
 	// ModulesDir is a path to a directory where descendent modules are
 	// (or should be) installed. (This is usually the
 	// .terraform/modules directory, in the common case where this package
@@ -55,6 +59,7 @@ func NewLoader(config *Config) (*Loader, error) {
 	parser := configs.NewParser(fs)
 	reg := registry.NewClient(config.Services, nil)
 
+	parser.UseTests = config.UseTests
 	ret := &Loader{
 		parser: parser,
 		modules: moduleMgr{

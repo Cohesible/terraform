@@ -36,6 +36,7 @@ func (c *ApplyCommand) Run(rawArgs []string) int {
 	// migrated to views.
 	c.Meta.color = !common.NoColor
 	c.Meta.Color = c.Meta.color
+	c.Meta.useTests = common.UseTests
 
 	// Parse and validate flags
 	var args *arguments.Apply

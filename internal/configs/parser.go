@@ -27,6 +27,8 @@ type Parser struct {
 	// for itself whether to enable it so that tests can cover both the
 	// allowed and not-allowed situations.
 	allowExperiments bool
+
+	UseTests bool
 }
 
 // NewParser creates and returns a new Parser that reads files from the given
