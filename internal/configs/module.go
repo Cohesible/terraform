@@ -102,7 +102,7 @@ type File struct {
 // will be incomplete and error diagnostics will be returned. Careful static
 // analysis of the returned Module is still possible in this case, but the
 // module will probably not be semantically valid.
-func NewModule(primaryFiles, testFiles, overrideFiles []*File, useTests bool) (*Module, hcl.Diagnostics) {
+func NewModule(primaryFiles, testFiles, overrideFiles []*File) (*Module, hcl.Diagnostics) {
 	var diags hcl.Diagnostics
 	mod := &Module{
 		ProviderConfigs:    map[string]*Provider{},
@@ -152,15 +152,15 @@ func NewModule(primaryFiles, testFiles, overrideFiles []*File, useTests bool) (*
 		}
 	}
 
-	// readOnly := len(testFiles) > 0
+	readOnly := len(testFiles) > 0
 
-	// for _, file := range testFiles {
-	// 	fileDiags := mod.appendFile(file, false)
-	// 	diags = append(diags, fileDiags...)
-	// }
+	for _, file := range testFiles {
+		fileDiags := mod.appendFile(file, false)
+		diags = append(diags, fileDiags...)
+	}
 
 	for _, file := range primaryFiles {
-		fileDiags := mod.appendFile(file, useTests)
+		fileDiags := mod.appendFile(file, readOnly)
 		diags = append(diags, fileDiags...)
 	}
 
@@ -191,11 +191,11 @@ func (m *Module) ResourceByAddr(addr addrs.Resource) *Resource {
 	}
 }
 
-func (m *Module) AppendFile(file *File, useTests bool) hcl.Diagnostics {
-	return m.appendFile(file, useTests)
+func (m *Module) AppendFile(file *File, readOnly bool) hcl.Diagnostics {
+	return m.appendFile(file, readOnly)
 }
 
-func (m *Module) appendFile(file *File, useTests bool) hcl.Diagnostics {
+func (m *Module) appendFile(file *File, readOnly bool) hcl.Diagnostics {
 	var diags hcl.Diagnostics
 
 	// If there are any conflicting requirements then we'll catch them
@@ -353,11 +353,7 @@ func (m *Module) appendFile(file *File, useTests bool) hcl.Diagnostics {
 			// will already have been caught.
 		}
 
-		if useTests && r.ModuleName != "test" {
-			r.ReadOnly = true
-		} else if !useTests && r.ModuleName == "test" {
-			r.ReadOnly = true
-		}
+		r.ReadOnly = readOnly
 	}
 
 	// Data sources can either be defined at the module root level, or within a
@@ -375,12 +371,7 @@ func (m *Module) appendFile(file *File, useTests bool) hcl.Diagnostics {
 			continue
 		}
 		m.DataResources[key] = r
-
-		if useTests && r.ModuleName != "test" {
-			r.ReadOnly = true
-		} else if !useTests && r.ModuleName == "test" {
-			r.ReadOnly = true
-		}
+		r.ReadOnly = readOnly
 	}
 
 	for _, c := range file.Checks {

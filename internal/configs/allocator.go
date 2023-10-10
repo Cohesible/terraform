@@ -34,19 +34,19 @@ func decodeAllocatorBlock(block *hcl.Block, override bool) (*Allocator, hcl.Diag
 	diags = append(diags, moreDiags...)
 
 	if attr, exists := content.Attributes["scope"]; exists {
-		scope, hclDiags := DecodeAsString(attr)
+		scope, hclDiags := decodeAsString(attr)
 		diags = diags.Extend(hclDiags)
 		r.Scope = scope
 	}
 
 	if attr, exists := content.Attributes["module"]; exists {
-		module, hclDiags := DecodeAsString(attr)
+		module, hclDiags := decodeAsString(attr)
 		diags = diags.Extend(hclDiags)
 		r.Module = module
 	}
 
 	if attr, exists := content.Attributes["endpoint"]; exists {
-		endpoint, hclDiags := DecodeAsString(attr)
+		endpoint, hclDiags := decodeAsString(attr)
 		diags = diags.Extend(hclDiags)
 		r.Endpoint = endpoint
 	}
@@ -60,7 +60,7 @@ func decodeAllocatorBlock(block *hcl.Block, override bool) (*Allocator, hcl.Diag
 	return r, diags
 }
 
-func DecodeAsString(attr *hcl.Attribute) (string, hcl.Diagnostics) {
+func decodeAsString(attr *hcl.Attribute) (string, hcl.Diagnostics) {
 	val, diags := attr.Expr.Value(nil)
 	if diags.HasErrors() {
 		return "", diags

@@ -18,14 +18,13 @@ import (
 
 // Resource represents a "resource" or "data" block in a module or file.
 type Resource struct {
-	Mode       addrs.ResourceMode
-	Name       string
-	Type       string
-	Config     hcl.Body
-	Count      hcl.Expression
-	ForEach    hcl.Expression
-	ModuleName string
-	ReadOnly   bool
+	Mode     addrs.ResourceMode
+	Name     string
+	Type     string
+	Config   hcl.Body
+	Count    hcl.Expression
+	ForEach  hcl.Expression
+	ReadOnly bool
 
 	ProviderConfigRef *ProviderConfigRef
 	Provider          addrs.Provider
@@ -141,12 +140,6 @@ func decodeResourceBlock(block *hcl.Block, override bool) (*Resource, hcl.Diagno
 
 	if attr, exists := content.Attributes["count"]; exists {
 		r.Count = attr.Expr
-	}
-
-	if attr, exists := content.Attributes["module_name"]; exists {
-		moduleName, moreDiags := DecodeAsString(attr)
-		diags = append(diags, moreDiags...)
-		r.ModuleName = moduleName
 	}
 
 	if attr, exists := content.Attributes["for_each"]; exists {
@@ -773,9 +766,6 @@ var commonResourceAttributes = []hcl.AttributeSchema{
 	},
 	{
 		Name: "depends_on",
-	},
-	{
-		Name: "module_name",
 	},
 }
 

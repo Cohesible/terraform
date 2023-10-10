@@ -54,7 +54,7 @@ func (p *Parser) loadConfigDir(path string, useTests bool) (*Module, hcl.Diagnos
 	override, fDiags := p.loadFiles(overridePaths, true)
 	diags = append(diags, fDiags...)
 
-	mod, modDiags := NewModule(primary, tests, override, useTests)
+	mod, modDiags := NewModule(primary, tests, override)
 	diags = append(diags, modDiags...)
 
 	mod.SourceDir = path
