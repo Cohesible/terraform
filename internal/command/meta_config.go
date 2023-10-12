@@ -9,9 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/configs"
 	"github.com/hashicorp/terraform/internal/configs/configload"
 	"github.com/hashicorp/terraform/internal/configs/configschema"
@@ -119,6 +121,33 @@ func (m *Meta) loadBackendConfig(rootDir string) (*configs.Backend, tfdiags.Diag
 	}
 
 	return mod.Backend, nil
+}
+
+func (m *Meta) loadTargets(rootDir string) ([]addrs.Targetable, tfdiags.Diagnostics) {
+	targets := make([]addrs.Targetable, 0)
+	mod, diags := m.loadSingleModule(rootDir)
+	if diags.HasErrors() {
+		return nil, diags
+	}
+
+	for _, r := range mod.ManagedResources {
+		parts := strings.Split(r.ModuleName, "#")
+		// FIXME: not robust code
+		var testSuiteId string
+		if len(parts) > 1 {
+			fragment := parts[1]
+			if strings.HasPrefix(fragment, "test-suite=") {
+				testSuiteId = strings.TrimPrefix(fragment, "test-suite=")
+			}
+		}
+
+		shouldUse := (m.useTests && testSuiteId != "") || (!m.useTests && testSuiteId == "")
+		if shouldUse {
+			targets = append(targets, r.Addr().Absolute(addrs.RootModuleInstance))
+		}
+	}
+
+	return targets, nil
 }
 
 // loadHCLFile reads an arbitrary HCL file and returns the unprocessed body

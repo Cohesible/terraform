@@ -112,6 +112,12 @@ func (c *ApplyCommand) Run(rawArgs []string) int {
 	// Collect variable value and add them to the operation request
 	diags = diags.Append(c.GatherVariables(opReq, args.Vars))
 
+	if len(opReq.Targets) == 0 && (!c.Destroy || c.Meta.useTests) {
+		targets, targetsDiags := c.Meta.loadTargets(".")
+		diags = diags.Append(targetsDiags)
+		opReq.Targets = targets
+	}
+
 	// Before we delegate to the backend, we'll print any warning diagnostics
 	// we've accumulated here, since the backend will start fresh with its own
 	// diagnostics.
