@@ -35,6 +35,8 @@ type Provider struct {
 	// export this so providers don't need to be re-resolved.
 	// This same field is also added to the ProviderConfigRef struct.
 	providerType addrs.Provider
+
+	ModuleName string
 }
 
 func decodeProviderBlock(block *hcl.Block) (*Provider, hcl.Diagnostics) {
@@ -86,6 +88,12 @@ func decodeProviderBlock(block *hcl.Block) (*Provider, hcl.Diagnostics) {
 		var versionDiags hcl.Diagnostics
 		provider.Version, versionDiags = decodeVersionConstraint(attr)
 		diags = append(diags, versionDiags...)
+	}
+
+	if attr, exists := content.Attributes["module_name"]; exists {
+		moduleName, moreDiags := DecodeAsString(attr)
+		diags = append(diags, moreDiags...)
+		provider.ModuleName = moduleName
 	}
 
 	// Reserved attribute names
@@ -239,6 +247,9 @@ var providerBlockSchema = &hcl.BodySchema{
 		},
 		{
 			Name: "version",
+		},
+		{
+			Name: "module_name",
 		},
 
 		// Attribute names reserved for future expansion.

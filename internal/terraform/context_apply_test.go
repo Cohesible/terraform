@@ -6067,9 +6067,6 @@ func TestContext2Apply_destroyTargetWithModuleVariableAndCount(t *testing.T) {
 		if got, want := diags[0].Severity(), tfdiags.Warning; got != want {
 			t.Errorf("wrong diagnostic severity %#v; want %#v", got, want)
 		}
-		if got, want := diags[0].Description().Summary, "Applied changes may be incomplete"; got != want {
-			t.Errorf("wrong diagnostic summary %#v; want %#v", got, want)
-		}
 	}
 
 	//Test that things were destroyed

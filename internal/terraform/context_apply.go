@@ -87,17 +87,6 @@ func (c *Context) Apply(plan *plans.Plan, config *configs.Config) (*states.State
 		newState.PruneResourceHusks()
 	}
 
-	if len(plan.TargetAddrs) > 0 {
-		diags = diags.Append(tfdiags.Sourceless(
-			tfdiags.Warning,
-			"Applied changes may be incomplete",
-			`The plan was created with the -target option in effect, so some changes requested in the configuration may have been ignored and the output values may not be fully updated. Run the following command to verify that no other changes are pending:
-    terraform plan
-	
-Note that the -target option is not suitable for routine use, and is provided only for exceptional situations such as recovering from errors or mistakes, or when Terraform specifically suggests to use it as part of an error message.`,
-		))
-	}
-
 	// FIXME: we cannot check for an empty plan for refresh-only, because root
 	// outputs are always stored as changes. The final condition of the state
 	// also depends on some cleanup which happens during the apply walk. It
