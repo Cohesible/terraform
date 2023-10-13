@@ -123,6 +123,25 @@ func (m *Meta) loadBackendConfig(rootDir string) (*configs.Backend, tfdiags.Diag
 	return mod.Backend, nil
 }
 
+func (m *Meta) shouldInclude(moduleName, testSuiteId string) bool {
+	canInclude := (m.useTests && testSuiteId != "") || (!m.useTests && testSuiteId == "")
+	if !canInclude {
+		return false
+	}
+
+	if len(m.modules) == 0 {
+		return true
+	}
+
+	for _, name := range m.modules {
+		if moduleName == name {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (m *Meta) loadTargets(rootDir string) ([]addrs.Targetable, tfdiags.Diagnostics) {
 	targets := make([]addrs.Targetable, 0)
 	mod, diags := m.loadSingleModule(rootDir)
@@ -132,6 +151,8 @@ func (m *Meta) loadTargets(rootDir string) ([]addrs.Targetable, tfdiags.Diagnost
 
 	for _, r := range mod.ManagedResources {
 		parts := strings.Split(r.ModuleName, "#")
+		moduleName := parts[0]
+
 		// FIXME: not robust code
 		var testSuiteId string
 		if len(parts) > 1 {
@@ -141,8 +162,7 @@ func (m *Meta) loadTargets(rootDir string) ([]addrs.Targetable, tfdiags.Diagnost
 			}
 		}
 
-		shouldUse := (m.useTests && testSuiteId != "") || (!m.useTests && testSuiteId == "")
-		if shouldUse {
+		if m.shouldInclude(moduleName, testSuiteId) {
 			targets = append(targets, r.Addr().Absolute(addrs.RootModuleInstance))
 		}
 	}

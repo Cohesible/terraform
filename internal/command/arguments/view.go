@@ -3,6 +3,8 @@
 
 package arguments
 
+import "strings"
+
 // View represents the global command-line arguments which configure the view.
 type View struct {
 	// NoColor is used to disable the use of terminal color codes in all
@@ -15,6 +17,8 @@ type View struct {
 	CompactWarnings bool
 
 	UseTests bool
+
+	Modules []string
 }
 
 // ParseView processes CLI arguments, returning a View value and a
@@ -35,10 +39,14 @@ func ParseView(args []string) (*View, []string) {
 		case "-use-tests":
 			common.UseTests = true
 		default:
-			// Unsupported argument: move left to the current position, and
-			// increment the index.
-			args[i] = v
-			i++
+			if strings.HasPrefix(v, "-module=") {
+				common.Modules = append(common.Modules, strings.TrimPrefix(v, "-module="))
+			} else {
+				// Unsupported argument: move left to the current position, and
+				// increment the index.
+				args[i] = v
+				i++
+			}
 		}
 	}
 

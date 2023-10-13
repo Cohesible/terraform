@@ -252,6 +252,7 @@ type Meta struct {
 	migrateState     bool
 	compactWarnings  bool
 	useTests         bool
+	modules          []string // JS module names (no file extensions)
 
 	// Used with commands which write state to allow users to write remote
 	// state even if the remote and local Terraform versions don't match.

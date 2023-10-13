@@ -37,6 +37,7 @@ func (c *ApplyCommand) Run(rawArgs []string) int {
 	c.Meta.color = !common.NoColor
 	c.Meta.Color = c.Meta.color
 	c.Meta.useTests = common.UseTests
+	c.Meta.modules = common.Modules
 
 	// Parse and validate flags
 	var args *arguments.Apply
@@ -112,10 +113,17 @@ func (c *ApplyCommand) Run(rawArgs []string) int {
 	// Collect variable value and add them to the operation request
 	diags = diags.Append(c.GatherVariables(opReq, args.Vars))
 
-	if len(opReq.Targets) == 0 && (!c.Destroy || c.Meta.useTests) {
+	if len(opReq.Targets) == 0 && (!c.Destroy || c.Meta.useTests || len(c.modules) > 0) {
 		targets, targetsDiags := c.Meta.loadTargets(".")
 		diags = diags.Append(targetsDiags)
 		opReq.Targets = targets
+
+		if len(targets) == 0 {
+			// No changes needed
+			view.ResourceCount(args.State.StateOutPath)
+
+			return 0
+		}
 	}
 
 	// Before we delegate to the backend, we'll print any warning diagnostics
