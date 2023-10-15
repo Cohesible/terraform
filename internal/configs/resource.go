@@ -25,7 +25,6 @@ type Resource struct {
 	Count      hcl.Expression
 	ForEach    hcl.Expression
 	ModuleName string
-	ReadOnly   bool
 
 	ProviderConfigRef *ProviderConfigRef
 	Provider          addrs.Provider

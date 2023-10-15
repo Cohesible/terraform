@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform/internal/backend"
 	"github.com/hashicorp/terraform/internal/command/arguments"
 	"github.com/hashicorp/terraform/internal/command/views"
+	"github.com/hashicorp/terraform/internal/plans"
 	"github.com/hashicorp/terraform/internal/plans/planfile"
 	"github.com/hashicorp/terraform/internal/tfdiags"
 )
@@ -113,7 +114,8 @@ func (c *ApplyCommand) Run(rawArgs []string) int {
 	// Collect variable value and add them to the operation request
 	diags = diags.Append(c.GatherVariables(opReq, args.Vars))
 
-	if len(opReq.Targets) == 0 && (!c.Destroy || c.Meta.useTests || len(c.modules) > 0) {
+	isDestroy := c.Destroy || args.Operation.PlanMode == plans.DestroyMode
+	if len(opReq.Targets) == 0 && (!isDestroy || c.Meta.useTests || len(c.modules) > 0) {
 		targets, targetsDiags := c.Meta.loadTargets(".")
 		diags = diags.Append(targetsDiags)
 		opReq.Targets = targets

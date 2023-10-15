@@ -345,8 +345,8 @@ func (n *nodeExpandPlannableResource) resourceInstanceSubgraph(ctx EvalContext, 
 			// to force on CreateBeforeDestroy due to dependencies on other
 			// nodes that have it.
 			ForceCreateBeforeDestroy: n.CreateBeforeDestroy(),
-			skipRefresh:              n.skipRefresh || a.Config.ReadOnly,
-			skipPlanChanges:          n.skipPlanChanges || a.Config.ReadOnly,
+			skipRefresh:              n.skipRefresh,
+			skipPlanChanges:          n.skipPlanChanges,
 			forceReplace:             n.forceReplace,
 		}
 
