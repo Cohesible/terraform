@@ -97,6 +97,7 @@ func (t *TargetsTransformer) selectTargetedNodes(g *Graph, addrs []addrs.Targeta
 			switch d.(type) {
 			case GraphNodeResourceInstance:
 			case GraphNodeConfigResource:
+			case GraphNodeTargetableOverride:
 			default:
 				continue
 			}
@@ -130,6 +131,10 @@ func (t *TargetsTransformer) nodeIsTarget(v dag.Vertex, targets []addrs.Targetab
 		vertexAddr = r.ResourceInstanceAddr()
 	case GraphNodeConfigResource:
 		vertexAddr = r.ResourceAddr()
+
+	// Lifecycle hooks are directly attached to the resource
+	case GraphNodeTargetableOverride:
+		vertexAddr = r.GetTargetAddress()
 
 	default:
 		// Only resource and resource instance nodes can be targeted.

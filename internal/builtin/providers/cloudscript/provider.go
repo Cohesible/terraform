@@ -241,6 +241,8 @@ func (p *CloudScriptProvider) PlanResourceChange(req providers.PlanResourceChang
 		planned["output"] = cty.UnknownVal(cty.DynamicPseudoType)
 	case !req.PriorState.GetAttr("input").RawEquals(input):
 		planned["output"] = cty.UnknownVal(cty.DynamicPseudoType)
+		// TODO: check if `update` exists in the handler definition. If not then this should be set to `true`
+		// resp.RequiresReplace = append(resp.RequiresReplace, cty.GetAttrPath("input"))
 	default:
 
 	}

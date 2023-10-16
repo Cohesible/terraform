@@ -16,6 +16,67 @@ import (
 	"github.com/hashicorp/terraform/internal/tfdiags"
 )
 
+type HookKind string
+
+const (
+	Replace HookKind = "replace"
+)
+
+type LifecycleHook struct {
+	Kind    HookKind
+	Handler hcl.Expression
+
+	DeclRange hcl.Range
+}
+
+var lifecycleHookBlockSchema = &hcl.BodySchema{
+	Attributes: []hcl.AttributeSchema{
+		{
+			Name:     "kind",
+			Required: true,
+		},
+		{
+			Name:     "handler",
+			Required: true,
+		},
+	},
+}
+
+func decodeLifecycleHookBlock(block *hcl.Block) (*LifecycleHook, hcl.Diagnostics) {
+	var diags hcl.Diagnostics
+	hook := &LifecycleHook{
+		DeclRange: block.DefRange,
+	}
+
+	content, moreDiags := block.Body.Content(lifecycleHookBlockSchema)
+	diags = append(diags, moreDiags...)
+
+	if attr, exists := content.Attributes["kind"]; exists {
+		kind, moreDiags := DecodeAsString(attr)
+		diags = append(diags, moreDiags...)
+
+		if !diags.HasErrors() {
+			switch HookKind(kind) {
+			case Replace:
+				hook.Kind = Replace
+			default:
+				diags.Append(&hcl.Diagnostic{
+					Severity: hcl.DiagError,
+					Summary:  "Invalid lifecycle hook kind",
+					Detail:   fmt.Sprintf("%s is not valid", kind),
+					Subject:  attr.Range.Ptr(),
+				})
+			}
+		}
+	}
+
+	if attr, exists := content.Attributes["handler"]; exists {
+		hook.Handler = attr.Expr
+	}
+
+	return hook, diags
+}
+
 // Resource represents a "resource" or "data" block in a module or file.
 type Resource struct {
 	Mode       addrs.ResourceMode
@@ -29,6 +90,7 @@ type Resource struct {
 	ProviderConfigRef *ProviderConfigRef
 	Provider          addrs.Provider
 
+	Hooks          []*LifecycleHook
 	Preconditions  []*CheckRule
 	Postconditions []*CheckRule
 
@@ -289,6 +351,11 @@ func decodeResourceBlock(block *hcl.Block, override bool) (*Resource, hcl.Diagno
 					case "postcondition":
 						r.Postconditions = append(r.Postconditions, cr)
 					}
+				case "hook":
+					hook, moreDiags := decodeLifecycleHookBlock(block)
+					diags = append(diags, moreDiags...)
+
+					r.Hooks = append(r.Hooks, hook)
 				default:
 					// The cases above should be exhaustive for all block types
 					// defined in the lifecycle schema, so this shouldn't happen.
@@ -823,6 +890,7 @@ var resourceLifecycleBlockSchema = &hcl.BodySchema{
 		},
 	},
 	Blocks: []hcl.BlockHeaderSchema{
+		{Type: "hook"},
 		{Type: "precondition"},
 		{Type: "postcondition"},
 	},

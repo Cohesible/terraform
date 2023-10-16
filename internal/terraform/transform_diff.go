@@ -4,15 +4,19 @@
 package terraform
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 
+	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/configs"
 	"github.com/hashicorp/terraform/internal/dag"
+	"github.com/hashicorp/terraform/internal/lang"
 	"github.com/hashicorp/terraform/internal/plans"
 	"github.com/hashicorp/terraform/internal/states"
 	"github.com/hashicorp/terraform/internal/tfdiags"
+	"github.com/zclconf/go-cty/cty"
 )
 
 // DiffTransformer is a GraphTransformer that adds graph nodes representing
@@ -107,6 +111,8 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 			update = true
 		}
 
+		isReplace := update && delete
+
 		// A deposed instance may only have a change of Delete or NoOp. A NoOp
 		// can happen if the provider shows it no longer exists during the most
 		// recent ReadResource operation.
@@ -119,12 +125,70 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 			continue
 		}
 
+		createHookNode := func(action string) (*graphNodeLifeCycleHook, hcl.Diagnostics) {
+			// FIXME: this is not robust
+			providerConfig := t.Config.Module.ProviderConfigs["cloudscript"]
+			providerAddr := t.Config.ResolveAbsProviderAddr(
+				addrs.NewDefaultLocalProviderConfig("cloudscript"),
+				addrs.RootModuleInstance.Module(),
+			)
+			attrs, diags := providerConfig.Config.JustAttributes()
+			if diags.HasErrors() {
+				return nil, diags
+			}
+
+			config := t.Config.Module.ResourceByAddr(addr.Resource.Resource)
+			if config == nil {
+				diags = append(diags, &hcl.Diagnostic{
+					Severity: hcl.DiagError,
+					Summary:  fmt.Sprintf("Missing resource config %s", addr.Resource.Resource),
+				})
+
+				return nil, diags
+			}
+
+			endpointAttr, exists := attrs["endpoint"]
+			if !exists {
+				return nil, append(diags, &hcl.Diagnostic{
+					Severity: hcl.DiagError,
+					Summary:  fmt.Sprintf("Missing endpoint in cloudscript provider config"),
+				})
+			}
+
+			endpoint, moreDiags := configs.DecodeAsString(endpointAttr)
+			diags = append(diags, moreDiags...)
+			if diags.HasErrors() {
+				return nil, diags
+			}
+
+			for _, hook := range config.Hooks {
+				switch hook.Kind {
+				case configs.Replace:
+					return &graphNodeLifeCycleHook{
+						hook:           hook,
+						resource:       addr,
+						action:         action,
+						endpoint:       endpoint,
+						providerConfig: providerAddr,
+					}, nil
+
+				default:
+					diags = append(diags, &hcl.Diagnostic{
+						Severity: hcl.DiagError,
+						Summary:  fmt.Sprintf("Hook kind not supported: %s", hook.Kind),
+					})
+				}
+			}
+
+			return nil, diags
+		}
+
 		// If we're going to do a create_before_destroy Replace operation then
 		// we need to allocate a DeposedKey to use to retain the
 		// not-yet-destroyed prior object, so that the delete node can destroy
 		// _that_ rather than the newly-created node, which will be current
 		// by the time the delete node is visited.
-		if update && delete && createBeforeDestroy {
+		if isReplace && createBeforeDestroy {
 			// In this case, variable dk will be the _pre-assigned_ DeposedKey
 			// that must be used if the update graph node deposes the current
 			// instance, which will then align with the same key we pass
@@ -182,6 +246,16 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 			for _, rsrcNode := range resourceNodes[rsrcAddr] {
 				g.Connect(dag.BasicEdge(node, rsrcNode))
 			}
+
+			if isReplace {
+				afterCreateNode, diags := createHookNode("afterCreate")
+				if diags.HasErrors() {
+					return diags
+				}
+
+				g.Add(afterCreateNode)
+				g.Connect(dag.BasicEdge(afterCreateNode, node))
+			}
 		}
 
 		if delete {
@@ -207,11 +281,132 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 				log.Printf("[TRACE] DiffTransformer: %s deposed object %s will be represented for destruction by %s", addr, dk, dag.VertexName(node))
 			}
 			g.Add(node)
-		}
 
+			if isReplace {
+				beforeDestroyNode, diags := createHookNode("beforeDestroy")
+				if diags.HasErrors() {
+					return diags
+				}
+
+				g.Add(beforeDestroyNode)
+				g.Connect(dag.BasicEdge(node, beforeDestroyNode))
+			}
+		}
 	}
 
 	log.Printf("[TRACE] DiffTransformer complete")
 
 	return diags.Err()
+}
+
+type GraphNodeTargetableOverride interface {
+	GetTargetAddress() addrs.Targetable
+}
+
+type graphNodeLifeCycleHook struct {
+	action         string
+	hook           *configs.LifecycleHook
+	resource       addrs.AbsResourceInstance
+	providerConfig addrs.AbsProviderConfig
+	endpoint       string
+}
+
+var (
+	_ GraphNodeExecutable         = (*graphNodeLifeCycleHook)(nil)
+	_ GraphNodeReferenceable      = (*graphNodeLifeCycleHook)(nil)
+	_ GraphNodeTargetableOverride = (*graphNodeLifeCycleHook)(nil)
+)
+
+func (n *graphNodeLifeCycleHook) Name() string {
+	return fmt.Sprintf("%s (hook - %s) [%s]", n.resource, n.action, n.hook.Kind)
+}
+
+func (n *graphNodeLifeCycleHook) GetTargetAddress() addrs.Targetable {
+	return n.resource.ConfigResource()
+}
+
+func (n *graphNodeLifeCycleHook) ModulePath() addrs.Module {
+	return n.resource.ConfigResource().Module
+}
+
+func (n *graphNodeLifeCycleHook) ReferenceableAddrs() []addrs.Referenceable {
+	refs := []addrs.Referenceable{}
+	hookRefs, _ := lang.ReferencesInExpr(n.hook.Handler)
+	for _, ref := range hookRefs {
+		refs = append(refs, ref.Subject)
+	}
+
+	return refs
+}
+
+func (n *graphNodeLifeCycleHook) Execute(ctx EvalContext, op walkOperation) (diags tfdiags.Diagnostics) {
+	handlerVal, moreDiags := ctx.WithPath(n.resource.Module).EvaluateExpr(n.hook.Handler, cty.String, nil)
+	diags = append(diags, moreDiags...)
+	if diags.HasErrors() {
+		return diags
+	}
+
+	handler := handlerVal.AsString()
+	stateAddr := addrs.RootModuleInstance.ResourceInstance(addrs.ManagedResourceMode, "internal_hook", n.resource.String()+"--hook", addrs.NoKey)
+
+	rs := ctx.State().Resource(stateAddr.AffectedAbsResource())
+
+	var state json.RawMessage
+	if rs != nil {
+		ris := rs.Instance(addrs.NoKey)
+		if ris != nil {
+			state = ris.Current.AttrsJSON
+		}
+	}
+
+	resp, moreDiags := executeHandler(n.endpoint, n.action, handler, state)
+	diags = append(diags, moreDiags...)
+	if diags.HasErrors() {
+		return diags
+	}
+
+	if len(resp.State) > 0 {
+		ctx.State().SetResourceInstanceCurrent(
+			stateAddr,
+			&states.ResourceInstanceObjectSrc{
+				AttrsJSON: resp.State,
+				Status:    states.ObjectReady,
+			},
+			n.providerConfig,
+		)
+
+	} else {
+		ctx.State().RemoveResource(stateAddr.AffectedAbsResource())
+	}
+
+	return diags
+}
+
+type executeHandlerRequest struct {
+	Handler string          `json:"handler"`
+	State   json.RawMessage `json:"state,omitempty"`
+}
+
+type executeHandlerResponse struct {
+	State json.RawMessage `json:"state"`
+}
+
+func executeHandler(endpoint, action, handler string, state json.RawMessage) (resp *executeHandlerResponse, diags tfdiags.Diagnostics) {
+	req := executeHandlerRequest{
+		Handler: handler,
+		State:   state,
+	}
+
+	url, d := makeUrl(endpoint, action, "hooks")
+	if d.HasErrors() {
+		return resp, diags.Append(d)
+	}
+
+	resp = &executeHandlerResponse{}
+	d = sendRequest(url, req, resp)
+	if d.HasErrors() {
+		return resp, diags.Append(d)
+	}
+
+	return resp, diags
 }
