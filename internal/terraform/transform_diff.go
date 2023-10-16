@@ -11,7 +11,6 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/configs"
-	"github.com/hashicorp/terraform/internal/configs/configschema"
 	"github.com/hashicorp/terraform/internal/dag"
 	"github.com/hashicorp/terraform/internal/lang"
 	"github.com/hashicorp/terraform/internal/plans"
@@ -128,7 +127,7 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 			continue
 		}
 
-		createHookNode := func(action string, target *NodeAbstractResourceInstance) (*graphNodeLifeCycleHook, hcl.Diagnostics) {
+		createHookNode := func(action string, target *NodeAbstractResourceInstance) ([]*graphNodeLifeCycleHook, hcl.Diagnostics) {
 			// FIXME: this is not robust
 			providerConfig := t.Config.Module.ProviderConfigs["cloudscript"]
 			providerAddr := t.Config.ResolveAbsProviderAddr(
@@ -164,17 +163,18 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 				return nil, diags
 			}
 
+			nodes := []*graphNodeLifeCycleHook{}
 			for _, hook := range config.Hooks {
 				switch hook.Kind {
 				case configs.Replace:
-					return &graphNodeLifeCycleHook{
+					nodes = append(nodes, &graphNodeLifeCycleHook{
 						hook:       hook,
 						resource:   addr,
 						action:     action,
 						endpoint:   endpoint,
 						hookConfig: providerAddr,
 						target:     target,
-					}, nil
+					})
 
 				default:
 					diags = append(diags, &hcl.Diagnostic{
@@ -184,7 +184,7 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 				}
 			}
 
-			return nil, diags
+			return nodes, diags
 		}
 
 		// If we're going to do a create_before_destroy Replace operation then
@@ -252,13 +252,15 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 			}
 
 			if isReplace {
-				afterCreateNode, diags := createHookNode("afterCreate", abstract)
+				afterCreateNodes, diags := createHookNode("afterCreate", abstract)
 				if diags.HasErrors() {
 					return diags
 				}
 
-				g.Add(afterCreateNode)
-				g.Connect(dag.BasicEdge(afterCreateNode, node))
+				for _, n := range afterCreateNodes {
+					g.Add(n)
+					g.Connect(dag.BasicEdge(n, node))
+				}
 			}
 		}
 
@@ -287,15 +289,19 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 			g.Add(node)
 
 			if isReplace {
-				beforeDestroyNode, diags := createHookNode("beforeDestroy", abstract)
+				beforeDestroyNodes, diags := createHookNode("beforeDestroy", abstract)
 				if diags.HasErrors() {
 					return diags
 				}
 
-				g.Add(beforeDestroyNode)
-				g.Connect(dag.BasicEdge(node, beforeDestroyNode))
+				for _, n := range beforeDestroyNodes {
+					g.Add(n)
+					g.Connect(dag.BasicEdge(node, n))
+				}
 			}
 		}
+
+		// TODO: ensure that `beforeDestroy` is always called before `afterCreate`
 	}
 
 	log.Printf("[TRACE] DiffTransformer complete")
@@ -304,15 +310,12 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 }
 
 type graphNodeLifeCycleHook struct {
-	action        string
-	hook          *configs.LifecycleHook
-	resource      addrs.AbsResourceInstance
-	hookConfig    addrs.AbsProviderConfig
-	endpoint      string
-	schema        *configschema.Block
-	schemaVersion uint64
-
-	target *NodeAbstractResourceInstance
+	action     string
+	hook       *configs.LifecycleHook
+	resource   addrs.AbsResourceInstance
+	hookConfig addrs.AbsProviderConfig
+	endpoint   string
+	target     *NodeAbstractResourceInstance
 }
 
 var (
