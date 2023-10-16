@@ -24,6 +24,7 @@ const (
 
 type LifecycleHook struct {
 	Kind    HookKind
+	Input   hcl.Expression
 	Handler hcl.Expression
 
 	DeclRange hcl.Range
@@ -33,6 +34,10 @@ var lifecycleHookBlockSchema = &hcl.BodySchema{
 	Attributes: []hcl.AttributeSchema{
 		{
 			Name:     "kind",
+			Required: true,
+		},
+		{
+			Name:     "input",
 			Required: true,
 		},
 		{
@@ -68,6 +73,10 @@ func decodeLifecycleHookBlock(block *hcl.Block) (*LifecycleHook, hcl.Diagnostics
 				})
 			}
 		}
+	}
+
+	if attr, exists := content.Attributes["input"]; exists {
+		hook.Input = attr.Expr
 	}
 
 	if attr, exists := content.Attributes["handler"]; exists {

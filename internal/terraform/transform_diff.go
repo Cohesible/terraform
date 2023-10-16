@@ -11,12 +11,15 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/configs"
+	"github.com/hashicorp/terraform/internal/configs/configschema"
 	"github.com/hashicorp/terraform/internal/dag"
 	"github.com/hashicorp/terraform/internal/lang"
 	"github.com/hashicorp/terraform/internal/plans"
 	"github.com/hashicorp/terraform/internal/states"
 	"github.com/hashicorp/terraform/internal/tfdiags"
 	"github.com/zclconf/go-cty/cty"
+
+	ctyjson "github.com/zclconf/go-cty/cty/json"
 )
 
 // DiffTransformer is a GraphTransformer that adds graph nodes representing
@@ -125,7 +128,7 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 			continue
 		}
 
-		createHookNode := func(action string) (*graphNodeLifeCycleHook, hcl.Diagnostics) {
+		createHookNode := func(action string, target *NodeAbstractResourceInstance) (*graphNodeLifeCycleHook, hcl.Diagnostics) {
 			// FIXME: this is not robust
 			providerConfig := t.Config.Module.ProviderConfigs["cloudscript"]
 			providerAddr := t.Config.ResolveAbsProviderAddr(
@@ -165,11 +168,12 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 				switch hook.Kind {
 				case configs.Replace:
 					return &graphNodeLifeCycleHook{
-						hook:           hook,
-						resource:       addr,
-						action:         action,
-						endpoint:       endpoint,
-						providerConfig: providerAddr,
+						hook:       hook,
+						resource:   addr,
+						action:     action,
+						endpoint:   endpoint,
+						hookConfig: providerAddr,
+						target:     target,
 					}, nil
 
 				default:
@@ -248,7 +252,7 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 			}
 
 			if isReplace {
-				afterCreateNode, diags := createHookNode("afterCreate")
+				afterCreateNode, diags := createHookNode("afterCreate", abstract)
 				if diags.HasErrors() {
 					return diags
 				}
@@ -283,7 +287,7 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 			g.Add(node)
 
 			if isReplace {
-				beforeDestroyNode, diags := createHookNode("beforeDestroy")
+				beforeDestroyNode, diags := createHookNode("beforeDestroy", abstract)
 				if diags.HasErrors() {
 					return diags
 				}
@@ -299,34 +303,45 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 	return diags.Err()
 }
 
-type GraphNodeTargetableOverride interface {
-	GetTargetAddress() addrs.Targetable
-}
-
 type graphNodeLifeCycleHook struct {
-	action         string
-	hook           *configs.LifecycleHook
-	resource       addrs.AbsResourceInstance
-	providerConfig addrs.AbsProviderConfig
-	endpoint       string
+	action        string
+	hook          *configs.LifecycleHook
+	resource      addrs.AbsResourceInstance
+	hookConfig    addrs.AbsProviderConfig
+	endpoint      string
+	schema        *configschema.Block
+	schemaVersion uint64
+
+	target *NodeAbstractResourceInstance
 }
 
 var (
-	_ GraphNodeExecutable         = (*graphNodeLifeCycleHook)(nil)
-	_ GraphNodeReferenceable      = (*graphNodeLifeCycleHook)(nil)
-	_ GraphNodeTargetableOverride = (*graphNodeLifeCycleHook)(nil)
+	_ GraphNodeExecutable       = (*graphNodeLifeCycleHook)(nil)
+	_ GraphNodeReferenceable    = (*graphNodeLifeCycleHook)(nil)
+	_ GraphNodeProviderConsumer = (*graphNodeLifeCycleHook)(nil)
+	_ GraphNodeConfigResource   = (*graphNodeLifeCycleHook)(nil)
 )
 
 func (n *graphNodeLifeCycleHook) Name() string {
 	return fmt.Sprintf("%s (hook - %s) [%s]", n.resource, n.action, n.hook.Kind)
 }
 
-func (n *graphNodeLifeCycleHook) GetTargetAddress() addrs.Targetable {
-	return n.resource.ConfigResource()
+func (n *graphNodeLifeCycleHook) Provider() addrs.Provider {
+	return n.target.Provider()
 }
 
+func (n *graphNodeLifeCycleHook) ResourceAddr() addrs.ConfigResource {
+	return n.target.ResourceAddr()
+}
+
+func (n *graphNodeLifeCycleHook) ProvidedBy() (addr addrs.ProviderConfig, exact bool) {
+	return n.target.ProvidedBy()
+}
+
+func (n *graphNodeLifeCycleHook) SetProvider(addr addrs.AbsProviderConfig) {}
+
 func (n *graphNodeLifeCycleHook) ModulePath() addrs.Module {
-	return n.resource.ConfigResource().Module
+	return n.target.ModulePath()
 }
 
 func (n *graphNodeLifeCycleHook) ReferenceableAddrs() []addrs.Referenceable {
@@ -346,6 +361,12 @@ func (n *graphNodeLifeCycleHook) Execute(ctx EvalContext, op walkOperation) (dia
 		return diags
 	}
 
+	input, moreDiags := ctx.WithPath(n.resource.Module).EvaluateExpr(n.hook.Input, cty.DynamicPseudoType, nil)
+	diags = append(diags, moreDiags...)
+	if diags.HasErrors() {
+		return diags
+	}
+
 	handler := handlerVal.AsString()
 	stateAddr := addrs.RootModuleInstance.ResourceInstance(addrs.ManagedResourceMode, "internal_hook", n.resource.String()+"--hook", addrs.NoKey)
 
@@ -359,7 +380,12 @@ func (n *graphNodeLifeCycleHook) Execute(ctx EvalContext, op walkOperation) (dia
 		}
 	}
 
-	resp, moreDiags := executeHandler(n.endpoint, n.action, handler, state)
+	instanceState, err := ctyjson.SimpleJSONValue{Value: input}.MarshalJSON()
+	if err != nil {
+		return diags.Append(err)
+	}
+
+	resp, moreDiags := executeHandler(n.endpoint, n.action, handler, instanceState, state)
 	diags = append(diags, moreDiags...)
 	if diags.HasErrors() {
 		return diags
@@ -372,7 +398,7 @@ func (n *graphNodeLifeCycleHook) Execute(ctx EvalContext, op walkOperation) (dia
 				AttrsJSON: resp.State,
 				Status:    states.ObjectReady,
 			},
-			n.providerConfig,
+			n.hookConfig,
 		)
 
 	} else {
@@ -383,18 +409,20 @@ func (n *graphNodeLifeCycleHook) Execute(ctx EvalContext, op walkOperation) (dia
 }
 
 type executeHandlerRequest struct {
-	Handler string          `json:"handler"`
-	State   json.RawMessage `json:"state,omitempty"`
+	Handler  string          `json:"handler"`
+	Instance json.RawMessage `json:"instance"`
+	State    json.RawMessage `json:"state,omitempty"`
 }
 
 type executeHandlerResponse struct {
 	State json.RawMessage `json:"state"`
 }
 
-func executeHandler(endpoint, action, handler string, state json.RawMessage) (resp *executeHandlerResponse, diags tfdiags.Diagnostics) {
+func executeHandler(endpoint, action, handler string, instance, state json.RawMessage) (resp *executeHandlerResponse, diags tfdiags.Diagnostics) {
 	req := executeHandlerRequest{
-		Handler: handler,
-		State:   state,
+		Handler:  handler,
+		Instance: instance,
+		State:    state,
 	}
 
 	url, d := makeUrl(endpoint, action, "hooks")
