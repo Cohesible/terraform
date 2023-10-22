@@ -3,10 +3,11 @@ package cloudscript
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 
 	"github.com/hashicorp/terraform/internal/configs/configschema"
+	"github.com/hashicorp/terraform/internal/httpclient"
 	"github.com/hashicorp/terraform/internal/providers"
+
 	"github.com/zclconf/go-cty/cty"
 	ctyjson "github.com/zclconf/go-cty/cty/json"
 )
@@ -214,7 +215,7 @@ func getStringValue(config cty.Value, attr string) string {
 func (p *CloudScriptProvider) ConfigureProvider(req providers.ConfigureProviderRequest) (resp providers.ConfigureProviderResponse) {
 	config := req.Config
 	client := ExampleClient{
-		HttpClient:       http.DefaultClient,
+		HttpClient:       httpclient.NewRetryableClient(),
 		Endpoint:         getStringValue(config, "endpoint"),
 		WorkingDirectory: getStringValue(config, "workingDirectory"),
 		OutputDirectory:  getStringValue(config, "outputDirectory"),

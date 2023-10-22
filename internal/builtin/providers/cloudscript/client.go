@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
+
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 type ExampleClient struct {
-	HttpClient       *http.Client
+	HttpClient       *retryablehttp.Client
 	Endpoint         string
 	WorkingDirectory string
 	OutputDirectory  string
