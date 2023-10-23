@@ -28,7 +28,7 @@ func NewRetryableClient() *retryablehttp.Client {
 	client := cleanhttp.DefaultPooledClient()
 	retryableClient := retryablehttp.NewClient()
 	retryableClient.HTTPClient = client
-	retryableClient.RetryMax = 3
+	retryableClient.RetryMax = 2
 	retryableClient.RequestLogHook = requestLogHook
 	retryableClient.ErrorHandler = maxRetryErrorHandler
 

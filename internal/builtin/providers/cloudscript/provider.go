@@ -3,6 +3,7 @@ package cloudscript
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/hashicorp/terraform/internal/configs/configschema"
 	"github.com/hashicorp/terraform/internal/httpclient"
@@ -216,7 +217,7 @@ func (p *CloudScriptProvider) ConfigureProvider(req providers.ConfigureProviderR
 	config := req.Config
 	client := ExampleClient{
 		HttpClient:       httpclient.NewRetryableClient(),
-		Endpoint:         getStringValue(config, "endpoint"),
+		Endpoint:         getEndpoint(config),
 		WorkingDirectory: getStringValue(config, "workingDirectory"),
 		OutputDirectory:  getStringValue(config, "outputDirectory"),
 		BuildDirectory:   getStringValue(config, "buildDirectory"),
@@ -225,6 +226,14 @@ func (p *CloudScriptProvider) ConfigureProvider(req providers.ConfigureProviderR
 	p.client = &client
 
 	return resp
+}
+
+func getEndpoint(config cty.Value) string {
+	if endpoint, exists := os.LookupEnv("TF_CLOUDSCRIPT_PROVIDER_ENDPOINT"); exists {
+		return endpoint
+	}
+
+	return getStringValue(config, "endpoint")
 }
 
 func (p *CloudScriptProvider) PlanResourceChange(req providers.PlanResourceChangeRequest) (resp providers.PlanResourceChangeResponse) {
