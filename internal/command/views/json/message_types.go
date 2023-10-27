@@ -6,6 +6,9 @@ package json
 type MessageType string
 
 const (
+	// Session messages
+	MessageReady MessageType = "ready"
+
 	// Generic messages
 	MessageVersion    MessageType = "version"
 	MessageLog        MessageType = "log"
@@ -16,6 +19,7 @@ const (
 	MessagePlannedChange MessageType = "planned_change"
 	MessageChangeSummary MessageType = "change_summary"
 	MessageOutputs       MessageType = "outputs"
+	MessageResult        MessageType = "result"
 
 	// Hook-driven messages
 	MessageApplyStart        MessageType = "apply_start"

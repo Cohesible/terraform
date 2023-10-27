@@ -30,6 +30,7 @@ type CachedProvider struct {
 // terraform.Context, and thus it'll be safe to cache certain information
 // about the providers for performance reasons.
 type contextPlugins struct {
+	KeepAlive            bool
 	ProviderCache        map[string]*CachedProvider
 	providerFactories    map[addrs.Provider]providers.Factory
 	provisionerFactories map[string]provisioners.Factory
@@ -41,9 +42,13 @@ type contextPlugins struct {
 	// it makes sense to preload all of them.
 	providerSchemas    map[addrs.Provider]*ProviderSchema
 	provisionerSchemas map[string]*configschema.Block
-	schemasLock        sync.Mutex
-	installer          *providercache.Installer
-	persistLockFile    func(*depsfile.Locks) tfdiags.Diagnostics
+	schemasLock        sync.RWMutex
+	cacheLock          sync.RWMutex
+	providerLocks      map[addrs.Provider]*sync.Mutex
+	// schemaLocks        map[addrs.Provider]*sync.Mutex
+
+	installer       *providercache.Installer
+	persistLockFile func(*depsfile.Locks) tfdiags.Diagnostics
 }
 
 func newContextPlugins(
@@ -51,8 +56,10 @@ func newContextPlugins(
 	provisionerFactories map[string]provisioners.Factory,
 	installer *providercache.Installer,
 	persistLockFile func(*depsfile.Locks) tfdiags.Diagnostics,
+	keepAlive bool,
 ) *contextPlugins {
 	ret := &contextPlugins{
+		KeepAlive:            keepAlive,
 		providerFactories:    providerFactories,
 		provisionerFactories: provisionerFactories,
 		installer:            installer,
@@ -66,6 +73,21 @@ func (cp *contextPlugins) init() {
 	cp.ProviderCache = map[string]*CachedProvider{}
 	cp.providerSchemas = make(map[addrs.Provider]*ProviderSchema, len(cp.providerFactories))
 	cp.provisionerSchemas = make(map[string]*configschema.Block, len(cp.provisionerFactories))
+	cp.providerLocks = make(map[addrs.Provider]*sync.Mutex, len(cp.providerFactories))
+	// cp.schemaLocks = make(map[addrs.Provider]*sync.Mutex, len(cp.providerFactories))
+
+	for addr := range cp.providerFactories {
+		cp.providerLocks[addr] = &sync.Mutex{}
+		// cp.schemaLocks[addr] = &sync.Mutex{}
+	}
+}
+
+func (cp *contextPlugins) SetCache(cache map[string]*CachedProvider) {
+	cp.ProviderCache = cache
+}
+
+func (cp *contextPlugins) GetCache() map[string]*CachedProvider {
+	return cp.ProviderCache
 }
 
 func (cp *contextPlugins) InstallProvider(ctx context.Context, addr addrs.Provider, version versions.Version, platform getproviders.Platform) error {
@@ -87,14 +109,38 @@ func (cp *contextPlugins) HasProvider(addr addrs.Provider) bool {
 	return ok
 }
 
-func (cp *contextPlugins) NewProviderInstance(addr addrs.Provider) (providers.Interface, error) {
-	f, ok := cp.providerFactories[addr]
+func (cp *contextPlugins) createProvider(addr addrs.Provider) (providers.Interface, error) {
+	l, ok := cp.providerLocks[addr]
 	if !ok {
 		return nil, fmt.Errorf("unavailable provider %q", addr.String())
 	}
 
-	return f()
+	l.Lock()
+	defer l.Unlock()
 
+	return cp.providerFactories[addr]()
+}
+
+func (cp *contextPlugins) NewProviderInstance(addr addrs.Provider) (providers.Interface, error) {
+	cp.cacheLock.RLock()
+	if cached, exists := cp.ProviderCache[addr.String()]; exists {
+		defer cp.cacheLock.RUnlock()
+
+		return cached.provider, nil
+	}
+
+	cp.cacheLock.RUnlock()
+
+	p, err := cp.createProvider(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	cp.cacheLock.Lock()
+	cp.ProviderCache[addr.String()] = &CachedProvider{provider: p}
+	cp.cacheLock.Unlock()
+
+	return p, nil
 }
 
 func (cp *contextPlugins) HasProvisioner(typ string) bool {
@@ -111,6 +157,13 @@ func (cp *contextPlugins) NewProvisionerInstance(typ string) (provisioners.Inter
 	return f()
 }
 
+func (cp *contextPlugins) getSchema(addr addrs.Provider) (*ProviderSchema, bool) {
+	cp.schemasLock.RLock()
+	defer cp.schemasLock.RUnlock()
+	schema, ok := cp.providerSchemas[addr]
+	return schema, ok
+}
+
 // ProviderSchema uses a temporary instance of the provider with the given
 // address to obtain the full schema for all aspects of that provider.
 //
@@ -118,10 +171,7 @@ func (cp *contextPlugins) NewProvisionerInstance(typ string) (provisioners.Inter
 // to repeatedly call this method with the same address if various different
 // parts of Terraform all need the same schema information.
 func (cp *contextPlugins) ProviderSchema(addr addrs.Provider) (*ProviderSchema, error) {
-	cp.schemasLock.Lock()
-	defer cp.schemasLock.Unlock()
-
-	if schema, ok := cp.providerSchemas[addr]; ok {
+	if schema, ok := cp.getSchema(addr); ok {
 		return schema, nil
 	}
 
@@ -131,7 +181,19 @@ func (cp *contextPlugins) ProviderSchema(addr addrs.Provider) (*ProviderSchema, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate provider %q to obtain schema: %s", addr, err)
 	}
-	defer provider.Close()
+
+	// if !cp.KeepAlive {
+	// 	defer provider.Close()
+	// }
+
+	l := cp.providerLocks[addr]
+	l.Lock()
+	defer l.Unlock()
+
+	// Check again in case we were locked
+	if schema, ok := cp.getSchema(addr); ok {
+		return schema, nil
+	}
 
 	resp := provider.GetProviderSchema()
 	if resp.Diagnostics.HasErrors() {
@@ -181,7 +243,10 @@ func (cp *contextPlugins) ProviderSchema(addr addrs.Provider) (*ProviderSchema, 
 		s.ProviderMeta = resp.ProviderMeta.Block
 	}
 
+	cp.schemasLock.Lock()
 	cp.providerSchemas[addr] = s
+	cp.schemasLock.Unlock()
+
 	return s, nil
 }
 

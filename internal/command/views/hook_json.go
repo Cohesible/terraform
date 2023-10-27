@@ -99,7 +99,7 @@ func (h *jsonHook) applyingHeartbeat(progress applyProgress) {
 	}
 }
 
-func (h *jsonHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error) (terraform.HookAction, error) {
+func (h *jsonHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.ResourceInstanceObjectSrc) (terraform.HookAction, error) {
 	key := addr.String()
 	h.applyingLock.Lock()
 	progress := h.applying[key]
@@ -119,10 +119,14 @@ func (h *jsonHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generati
 		// Errors are collected and displayed post-apply, so no need to
 		// re-render them here. Instead just signal that this resource failed
 		// to apply.
-		h.view.Hook(json.NewApplyErrored(addr, progress.action, elapsed))
+		h.view.Hook(json.NewApplyErrored(addr, progress.action, elapsed, err))
 	} else {
+		var attr []byte
+		if src != nil {
+			attr = src.AttrsJSON
+		}
 		idKey, idValue := format.ObjectValueID(newState)
-		h.view.Hook(json.NewApplyComplete(addr, progress.action, idKey, idValue, elapsed))
+		h.view.Hook(json.NewApplyComplete(addr, progress.action, idKey, idValue, elapsed, attr))
 	}
 	return terraform.HookActionContinue, nil
 }

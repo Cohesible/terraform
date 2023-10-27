@@ -6,7 +6,9 @@ package terraform
 import (
 	"fmt"
 	"log"
+	"sync"
 
+	tfaddr "github.com/hashicorp/terraform-registry-address"
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/configs"
 	"github.com/hashicorp/terraform/internal/configs/configschema"
@@ -101,15 +103,21 @@ func loadSchemas(config *configs.Config, state *states.State, plugins *contextPl
 func loadProviderSchemas(schemas map[addrs.Provider]*providers.Schemas, config *configs.Config, state *states.State, plugins *contextPlugins) tfdiags.Diagnostics {
 	var diags tfdiags.Diagnostics
 
-	ensure := func(fqn addrs.Provider) {
-		name := fqn.String()
+	// Loading the schemas in parallel only helps for `apply` commands at the moment
+	wg := sync.WaitGroup{}
+	lock := sync.Mutex{}
 
-		if _, exists := schemas[fqn]; exists {
-			return
-		}
+	ensure := func(fqn addrs.Provider) {
+		defer wg.Done()
+
+		name := fqn.String()
 
 		log.Printf("[TRACE] LoadSchemas: retrieving schema for provider type %q", name)
 		schema, err := plugins.ProviderSchema(fqn)
+
+		lock.Lock()
+		defer lock.Unlock()
+
 		if err != nil {
 			// We'll put a stub in the map so we won't re-attempt this on
 			// future calls, which would then repeat the same error message
@@ -128,18 +136,27 @@ func loadProviderSchemas(schemas map[addrs.Provider]*providers.Schemas, config *
 		schemas[fqn] = schema
 	}
 
+	fqns := make(map[tfaddr.Provider]bool)
+
 	if config != nil {
 		for _, fqn := range config.ProviderTypes() {
-			ensure(fqn)
+			fqns[fqn] = true
 		}
 	}
 
 	if state != nil {
 		needed := providers.AddressedTypesAbs(state.ProviderAddrs())
 		for _, typeAddr := range needed {
-			ensure(typeAddr)
+			fqns[typeAddr] = true
 		}
 	}
+
+	for fqn := range fqns {
+		wg.Add(1)
+		go ensure(fqn)
+	}
+
+	wg.Wait()
 
 	return diags
 }

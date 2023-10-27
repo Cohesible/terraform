@@ -4,6 +4,7 @@
 package json
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -83,11 +84,12 @@ func NewApplyProgress(addr addrs.AbsResourceInstance, action plans.Action, elaps
 
 // ApplyComplete: triggered by PostApply hook
 type applyComplete struct {
-	Resource   ResourceAddr `json:"resource"`
-	Action     ChangeAction `json:"action"`
-	IDKey      string       `json:"id_key,omitempty"`
-	IDValue    string       `json:"id_value,omitempty"`
-	Elapsed    float64      `json:"elapsed_seconds"`
+	Resource   ResourceAddr    `json:"resource"`
+	Action     ChangeAction    `json:"action"`
+	IDKey      string          `json:"id_key,omitempty"`
+	IDValue    string          `json:"id_value,omitempty"`
+	Elapsed    float64         `json:"elapsed_seconds"`
+	State      json.RawMessage `json:"state,omitempty"`
 	actionNoun string
 	elapsed    time.Duration
 }
@@ -106,12 +108,13 @@ func (h *applyComplete) String() string {
 	return fmt.Sprintf("%s: %s complete after %s%s", h.Resource.Addr, h.actionNoun, h.elapsed, id)
 }
 
-func NewApplyComplete(addr addrs.AbsResourceInstance, action plans.Action, idKey, idValue string, elapsed time.Duration) Hook {
+func NewApplyComplete(addr addrs.AbsResourceInstance, action plans.Action, idKey, idValue string, elapsed time.Duration, state []byte) Hook {
 	return &applyComplete{
 		Resource:   newResourceAddr(addr),
 		Action:     changeAction(action),
 		IDKey:      idKey,
 		IDValue:    idValue,
+		State:      state,
 		Elapsed:    elapsed.Seconds(),
 		actionNoun: actionNoun(action),
 		elapsed:    elapsed,
@@ -123,6 +126,7 @@ func NewApplyComplete(addr addrs.AbsResourceInstance, action plans.Action, idKey
 type applyErrored struct {
 	Resource   ResourceAddr `json:"resource"`
 	Action     ChangeAction `json:"action"`
+	Reason     string       `json:"reason"`
 	Elapsed    float64      `json:"elapsed_seconds"`
 	actionNoun string
 	elapsed    time.Duration
@@ -138,10 +142,11 @@ func (h *applyErrored) String() string {
 	return fmt.Sprintf("%s: %s errored after %s", h.Resource.Addr, h.actionNoun, h.elapsed)
 }
 
-func NewApplyErrored(addr addrs.AbsResourceInstance, action plans.Action, elapsed time.Duration) Hook {
+func NewApplyErrored(addr addrs.AbsResourceInstance, action plans.Action, elapsed time.Duration, err error) Hook {
 	return &applyErrored{
 		Resource:   newResourceAddr(addr),
 		Action:     changeAction(action),
+		Reason:     fmt.Sprintf("%s", err),
 		Elapsed:    elapsed.Seconds(),
 		actionNoun: actionNoun(action),
 		elapsed:    elapsed,

@@ -321,7 +321,7 @@ func (n *NodeApplyableResourceInstance) managedResourceExecute(ctx EvalContext) 
 		// dependencies are always updated to match the configuration during apply
 		state.Dependencies = n.Dependencies
 	}
-	err = n.writeResourceInstanceState(ctx, state, workingState)
+	src, err := n.writeResourceInstanceStateSrc(ctx, state, workingState)
 	if err != nil {
 		return diags.Append(err)
 	}
@@ -334,7 +334,7 @@ func (n *NodeApplyableResourceInstance) managedResourceExecute(ctx EvalContext) 
 
 	state = maybeTainted(addr.Absolute(ctx.Path()), state, diffApply, diags.Err())
 
-	err = n.writeResourceInstanceState(ctx, state, workingState)
+	src, err = n.writeResourceInstanceStateSrc(ctx, state, workingState)
 	if err != nil {
 		return diags.Append(err)
 	}
@@ -373,7 +373,7 @@ func (n *NodeApplyableResourceInstance) managedResourceExecute(ctx EvalContext) 
 		}
 	}
 
-	diags = diags.Append(n.postApplyHook(ctx, state, diags.Err()))
+	diags = diags.Append(n.postApplyHook(ctx, state, diags.Err(), src))
 	diags = diags.Append(updateStateHook(ctx))
 
 	// Post-conditions might block further progress. We intentionally do this

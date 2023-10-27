@@ -58,6 +58,8 @@ type ContextGraphWalker struct {
 	provisionerCache   map[string]provisioners.Interface
 	provisionerSchemas map[string]*configschema.Block
 	provisionerLock    sync.Mutex
+
+	providerLocks map[string]*sync.Mutex
 }
 
 func (w *ContextGraphWalker) EnterPath(path addrs.ModuleInstance) EvalContext {
@@ -77,6 +79,7 @@ func (w *ContextGraphWalker) EnterPath(path addrs.ModuleInstance) EvalContext {
 
 func (w *ContextGraphWalker) EvalContext() EvalContext {
 	w.once.Do(w.init)
+	w.providerCache = w.Context.plugins.ProviderCache
 
 	// Our evaluator shares some locks with the main context and the walker
 	// so that we can safely run multiple evaluations at once across
@@ -113,6 +116,7 @@ func (w *ContextGraphWalker) EvalContext() EvalContext {
 		Evaluator:             evaluator,
 		VariableValues:        w.variableValues,
 		VariableValuesLock:    &w.variableValuesLock,
+		ProviderLocks:         w.providerLocks,
 	}
 
 	return ctx
@@ -125,6 +129,7 @@ func (w *ContextGraphWalker) init() {
 	w.provisionerCache = make(map[string]provisioners.Interface)
 	w.provisionerSchemas = make(map[string]*configschema.Block)
 	w.variableValues = make(map[string]map[string]cty.Value)
+	w.providerLocks = make(map[string]*sync.Mutex)
 
 	// Populate root module variable values. Other modules will be populated
 	// during the graph walk.

@@ -300,6 +300,11 @@ type Operation struct {
 	// for unmatched import targets and where any generated config should be
 	// written to.
 	GenerateConfigOut string
+
+	KeepAlive     bool
+	ProviderCache map[string]*terraform.CachedProvider
+	StateManager  statemgr.Full
+	Cache         *terraform.Cache
 }
 
 // HasConfig returns true if and only if the operation has a ConfigDir value
@@ -428,4 +433,24 @@ func ReadPathOrContents(poc string) (string, error) {
 	}
 
 	return poc, nil
+}
+
+func (o *Operation) InitStateManager(b Backend) (statemgr.Full, error) {
+	if o.StateManager != nil {
+		return o.StateManager, nil
+	}
+
+	s, err := b.StateMgr(o.Workspace)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("[INFO] backend: reading state for workspace %q", o.Workspace)
+	if err := s.RefreshState(); err != nil {
+		return nil, err
+	}
+
+	o.StateManager = s
+
+	return s, nil
 }

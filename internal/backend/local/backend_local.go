@@ -40,8 +40,7 @@ func (b *Local) localRun(op *backend.Operation) (*backend.LocalRun, *configload.
 	var diags tfdiags.Diagnostics
 
 	// Get the latest state.
-	log.Printf("[TRACE] backend/local: requesting state manager for workspace %q", op.Workspace)
-	s, err := b.StateMgr(op.Workspace)
+	s, err := op.InitStateManager(b)
 	if err != nil {
 		diags = diags.Append(fmt.Errorf("error loading state: %w", err))
 		return nil, nil, nil, diags
@@ -59,12 +58,6 @@ func (b *Local) localRun(op *backend.Operation) (*backend.LocalRun, *configload.
 		}
 	}()
 
-	log.Printf("[TRACE] backend/local: reading remote state for workspace %q", op.Workspace)
-	if err := s.RefreshState(); err != nil {
-		diags = diags.Append(fmt.Errorf("error loading state: %w", err))
-		return nil, nil, nil, diags
-	}
-
 	ret := &backend.LocalRun{}
 
 	// Initialize our context options
@@ -74,6 +67,12 @@ func (b *Local) localRun(op *backend.Operation) (*backend.LocalRun, *configload.
 	}
 	coreOpts.UIInput = op.UIIn
 	coreOpts.Hooks = op.Hooks
+
+	if op.KeepAlive {
+		// For keeping providers alive across commands
+		coreOpts.KeepAlive = true
+		coreOpts.ProviderCache = op.ProviderCache
+	}
 
 	var ctxDiags tfdiags.Diagnostics
 	var configSnap *configload.Snapshot
@@ -196,6 +195,7 @@ func (b *Local) localRunDirect(op *backend.Operation, run *backend.LocalRun, cor
 		SetVariables:       variables,
 		SkipRefresh:        op.Type != backend.OperationTypeRefresh && !op.PlanRefresh,
 		GenerateConfigPath: op.GenerateConfigOut,
+		Cache:              op.Cache,
 	}
 	run.PlanOpts = planOpts
 

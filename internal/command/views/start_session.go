@@ -4,14 +4,18 @@
 package views
 
 import (
+	jsonencoding "encoding/json"
 	"fmt"
 
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/command/arguments"
 	"github.com/hashicorp/terraform/internal/command/format"
 	"github.com/hashicorp/terraform/internal/command/views/json"
 	"github.com/hashicorp/terraform/internal/states"
 	"github.com/hashicorp/terraform/internal/terraform"
 	"github.com/hashicorp/terraform/internal/tfdiags"
+	"github.com/zclconf/go-cty/cty"
 )
 
 type StartSession interface {
@@ -25,6 +29,8 @@ type StartSession interface {
 	HelpPrompt()
 
 	Ready()
+
+	PrintRefs(refs []*addrs.Reference) error
 }
 
 func NewStartSession(vt arguments.ViewType, view *View) StartSession {
@@ -108,6 +114,13 @@ func (v *StartSessionHuman) Ready() {
 	v.view.streams.Print(v.view.colorize.Color("[reset][bold][green]Ready\n\n"))
 }
 
+func (v *StartSessionHuman) PrintRefs(refs []*addrs.Reference) error {
+	for _, ref := range refs {
+		v.view.streams.Println(ref.DisplayString())
+	}
+	return nil
+}
+
 // The ApplyJSON implementation renders streaming JSON logs, suitable for
 // integrating with other software.
 type StartSessionJSON struct {
@@ -157,5 +170,67 @@ func (v *StartSessionJSON) HelpPrompt() {
 }
 
 func (v *StartSessionJSON) Ready() {
-	v.view.Log("Ready")
+	v.view.Ready()
+}
+
+type reference struct {
+	Subject     string       `json:"subject"`
+	Expressions []expression `json:"expressions"`
+}
+
+type expression struct {
+	Type  string                  `json:"type"`
+	Value jsonencoding.RawMessage `json:"value"`
+}
+
+func (v *StartSessionJSON) PrintRefs(refs []*addrs.Reference) error {
+	diags := tfdiags.Diagnostics{}
+	output := make([]reference, 0)
+	for _, ref := range refs {
+		expressions := make([]expression, 0)
+
+		marshal := func(t string, v interface{}) {
+			value, err := jsonencoding.Marshal(v)
+			if err != nil {
+				diags = diags.Append(err)
+			} else {
+				expressions = append(expressions, expression{Type: t, Value: value})
+			}
+		}
+
+		for _, step := range ref.Remaining {
+			switch tStep := step.(type) {
+			case hcl.TraverseRoot:
+				marshal("root", tStep.Name)
+			case hcl.TraverseAttr:
+				marshal("property", tStep.Name)
+			case hcl.TraverseIndex:
+				switch tStep.Key.Type() {
+				case cty.String:
+					val := fmt.Sprintf("%q", tStep.Key.AsString())
+					marshal("element", val)
+				case cty.Number:
+					val, _ := tStep.Key.AsBigFloat().Uint64()
+					marshal("element", val)
+				}
+			}
+		}
+
+		subject := ref.Subject.String()
+		if subject != "" {
+			output = append(output, reference{
+				Subject:     ref.Subject.String(),
+				Expressions: expressions,
+			})
+		}
+	}
+
+	bytes, err := jsonencoding.Marshal(output)
+	if err != nil {
+		return err
+	}
+
+	v.view.Result(bytes)
+
+	return nil
 }

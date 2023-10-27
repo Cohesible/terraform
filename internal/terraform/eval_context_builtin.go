@@ -59,11 +59,13 @@ type BuiltinEvalContext struct {
 	// available for use during a graph walk.
 	Plugins *contextPlugins
 
-	Hooks                 []Hook
-	InputValue            UIInput
-	ProviderCache         map[string]*CachedProvider
-	ProviderInputConfig   map[string]map[string]cty.Value
-	ProviderLock          *sync.Mutex
+	Hooks               []Hook
+	InputValue          UIInput
+	ProviderCache       map[string]*CachedProvider
+	ProviderInputConfig map[string]map[string]cty.Value
+	ProviderLock        *sync.Mutex
+	ProviderLocks       map[string]*sync.Mutex
+
 	ProvisionerCache      map[string]provisioners.Interface
 	ProvisionerLock       *sync.Mutex
 	ChangesValue          *plans.ChangesSync
@@ -119,16 +121,9 @@ func (ctx *BuiltinEvalContext) Input() UIInput {
 }
 
 func (ctx *BuiltinEvalContext) InitProvider(addr addrs.AbsProviderConfig) (providers.Interface, error) {
-	// If we already initialized, it is an error
 	if p := ctx.Provider(addr); p != nil {
 		return p, nil
-		// return nil, fmt.Errorf("%s is already initialized", addr)
 	}
-
-	// Warning: make sure to acquire these locks AFTER the call to Provider
-	// above, since it also acquires locks.
-	ctx.ProviderLock.Lock()
-	defer ctx.ProviderLock.Unlock()
 
 	key := addr.String()
 
@@ -138,6 +133,15 @@ func (ctx *BuiltinEvalContext) InitProvider(addr addrs.AbsProviderConfig) (provi
 	}
 
 	log.Printf("[TRACE] BuiltinEvalContext: Initialized %q provider for %s", addr.String(), addr)
+
+	ctx.ProviderLock.Lock()
+	defer ctx.ProviderLock.Unlock()
+
+	// Check again in case the lock was held during configuration
+	if cached, exists := ctx.ProviderCache[key]; exists {
+		return cached.provider, nil
+	}
+
 	ctx.ProviderCache[key] = &CachedProvider{
 		provider:   p,
 		configured: false,
@@ -162,6 +166,10 @@ func (ctx *BuiltinEvalContext) ProviderSchema(addr addrs.AbsProviderConfig) (*Pr
 	return ctx.Plugins.ProviderSchema(addr.Provider)
 }
 
+func (ctx *BuiltinEvalContext) ResourceSchema(provider addrs.AbsProviderConfig, addr addrs.ConfigResource) (*configschema.Block, uint64, error) {
+	return ctx.Plugins.ResourceTypeSchema(provider.Provider, addr.Resource.Mode, addr.Resource.Type)
+}
+
 func (ctx *BuiltinEvalContext) CloseProvider(addr addrs.AbsProviderConfig) error {
 	ctx.ProviderLock.Lock()
 	defer ctx.ProviderLock.Unlock()
@@ -169,6 +177,8 @@ func (ctx *BuiltinEvalContext) CloseProvider(addr addrs.AbsProviderConfig) error
 	key := addr.String()
 	cached := ctx.ProviderCache[key]
 	if cached != nil {
+		log.Printf("[INFO] BuiltinEvalContext: closing provider %s", addr)
+
 		delete(ctx.ProviderCache, key)
 		return cached.provider.Close()
 	}
@@ -191,11 +201,26 @@ func (ctx *BuiltinEvalContext) ConfigureProvider(addr addrs.AbsProviderConfig, c
 	}
 
 	key := addr.String()
+
+	ctx.ProviderLock.Lock()
+
+	if _, exists := ctx.ProviderLocks[key]; !exists {
+		ctx.ProviderLocks[key] = &sync.Mutex{}
+	}
+	l := ctx.ProviderLocks[key]
+
+	l.Lock()
+	defer l.Unlock()
 	cached := ctx.ProviderCache[key]
-	if cached.configured {
+	configured := cached.configured
+
+	ctx.ProviderLock.Unlock()
+
+	if configured {
 		return diags
 	}
 
+	log.Printf("[INFO] BuiltinEvalContext: configuring provider %s", addr)
 	providerSchema, err := ctx.ProviderSchema(addr)
 	if err != nil {
 		diags = diags.Append(fmt.Errorf("failed to read schema for %s: %s", addr, err))
@@ -205,9 +230,6 @@ func (ctx *BuiltinEvalContext) ConfigureProvider(addr addrs.AbsProviderConfig, c
 		diags = diags.Append(fmt.Errorf("schema for %s is not available", addr))
 		return diags
 	}
-
-	ctx.ProviderLock.Lock()
-	defer ctx.ProviderLock.Unlock()
 
 	req := providers.ConfigureProviderRequest{
 		TerraformVersion: version.String(),

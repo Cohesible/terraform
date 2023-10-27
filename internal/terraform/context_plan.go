@@ -83,6 +83,8 @@ type PlanOpts struct {
 	//
 	// If empty, then no config will be generated.
 	GenerateConfigPath string
+
+	Cache *Cache
 }
 
 // Plan generates an execution plan by comparing the given configuration
@@ -662,6 +664,7 @@ func (c *Context) planGraph(config *configs.Config, prevRunState *states.State, 
 			Operation:          walkPlan,
 			ImportTargets:      opts.ImportTargets,
 			GenerateConfigPath: opts.GenerateConfigPath,
+			Cache:              opts.Cache,
 		}).Build(addrs.RootModuleInstance)
 		return graph, walkPlan, diags
 	case plans.RefreshOnlyMode:
@@ -674,6 +677,7 @@ func (c *Context) planGraph(config *configs.Config, prevRunState *states.State, 
 			skipRefresh:        opts.SkipRefresh,
 			skipPlanChanges:    true, // this activates "refresh only" mode.
 			Operation:          walkPlan,
+			Cache:              opts.Cache,
 		}).Build(addrs.RootModuleInstance)
 		return graph, walkPlan, diags
 	case plans.DestroyMode:
@@ -685,6 +689,7 @@ func (c *Context) planGraph(config *configs.Config, prevRunState *states.State, 
 			Targets:            opts.Targets,
 			skipRefresh:        opts.SkipRefresh,
 			Operation:          walkPlanDestroy,
+			Cache:              opts.Cache,
 		}).Build(addrs.RootModuleInstance)
 		return graph, walkPlanDestroy, diags
 	default:

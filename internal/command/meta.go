@@ -106,6 +106,8 @@ type Meta struct {
 	// into the given directory.
 	PluginCacheDir string
 
+	KeepAlive bool
+
 	// PluginCacheMayBreakDependencyLockFile is a temporary CLI configuration-based
 	// opt out for the behavior of only using the plugin cache dir if its
 	// contents match checksums recorded in the dependency lock file.

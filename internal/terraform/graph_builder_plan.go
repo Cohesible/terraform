@@ -81,6 +81,8 @@ type PlanGraphBuilder struct {
 	//
 	// If empty, then config will not be generated.
 	GenerateConfigPath string
+
+	Cache *Cache
 }
 
 // See GraphBuilder
@@ -120,6 +122,8 @@ func (b *PlanGraphBuilder) Steps() []GraphTransformer {
 
 			// We only want to generate config during a plan operation.
 			generateConfigPathForImportTargets: b.GenerateConfigPath,
+
+			Cache: b.Cache,
 		},
 
 		&AllocatorTransformer{Config: b.Config, State: b.State},

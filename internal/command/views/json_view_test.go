@@ -255,7 +255,7 @@ func TestJSONView_Hook(t *testing.T) {
 	}
 	managed := addrs.Resource{Mode: addrs.ManagedResourceMode, Type: "test_instance", Name: "bar"}
 	addr := managed.Instance(addrs.StringKey("boop")).Absolute(foo)
-	hook := viewsjson.NewApplyComplete(addr, plans.Create, "id", "boop-beep", 34*time.Second)
+	hook := viewsjson.NewApplyComplete(addr, plans.Create, "id", "boop-beep", 34*time.Second, nil)
 
 	jv.Hook(hook)
 

@@ -33,12 +33,21 @@ func (p *Parser) LoadConfigFileOverride(path string) (*File, hcl.Diagnostics) {
 }
 
 func (p *Parser) loadConfigFile(path string, override bool) (*File, hcl.Diagnostics) {
+	if f, exists := p.fileCache[path]; exists {
+		return f, hcl.Diagnostics{}
+	}
+
 	body, diags := p.LoadHCLFile(path)
 	if body == nil {
 		return nil, diags
 	}
 
-	return LoadConfigFileFromBody(body, diags, override, p.allowExperiments)
+	f, diags := LoadConfigFileFromBody(body, diags, override, p.allowExperiments)
+	if !diags.HasErrors() {
+		p.fileCache[path] = f
+	}
+
+	return f, diags
 }
 
 func LoadConfigFileFromBody(body hcl.Body, diags hcl.Diagnostics, override bool, allowExperiments bool) (*File, hcl.Diagnostics) {

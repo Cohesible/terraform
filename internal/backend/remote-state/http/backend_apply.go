@@ -227,6 +227,8 @@ func (b *Backend) opApply(
 		return
 	}
 
+	op.ProviderCache = lr.Core.GetProviderCache()
+
 	// Store the final state
 	runningOp.State = applyState
 	err := statemgr.WriteAndPersist(opState, applyState, schemas)

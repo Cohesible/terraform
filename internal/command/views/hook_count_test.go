@@ -295,7 +295,7 @@ func TestCountHookApply_ChangeOnly(t *testing.T) {
 		}.Instance(addrs.NoKey).Absolute(addrs.RootModuleInstance)
 
 		h.PreApply(addr, states.CurrentGen, plans.Update, cty.DynamicVal, cty.DynamicVal)
-		h.PostApply(addr, states.CurrentGen, cty.DynamicVal, nil)
+		h.PostApply(addr, states.CurrentGen, cty.DynamicVal, nil, nil)
 	}
 
 	expected := &countHook{pending: make(map[string]plans.Action)}
@@ -326,7 +326,7 @@ func TestCountHookApply_DestroyOnly(t *testing.T) {
 		}.Instance(addrs.NoKey).Absolute(addrs.RootModuleInstance)
 
 		h.PreApply(addr, states.CurrentGen, plans.Delete, cty.DynamicVal, cty.DynamicVal)
-		h.PostApply(addr, states.CurrentGen, cty.DynamicVal, nil)
+		h.PostApply(addr, states.CurrentGen, cty.DynamicVal, nil, nil)
 	}
 
 	expected := &countHook{pending: make(map[string]plans.Action)}

@@ -2,6 +2,5 @@
     "id": "terraform",
     "defaultBranch": "main",
     "deployOptions": {
-        "terraformPath": ".cloudscript/terraform/1.5.8/terraform_v1.5.8"
     }
 }

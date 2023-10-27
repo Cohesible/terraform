@@ -39,13 +39,8 @@ func (b *Backend) LocalRun(op *backend.Operation) (*backend.LocalRun, statemgr.F
 func (b *Backend) localRun(op *backend.Operation) (*backend.LocalRun, *configload.Snapshot, statemgr.Full, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 
-	s, err := b.StateMgr(op.Workspace)
+	s, err := op.InitStateManager(b)
 	if err != nil {
-		diags = diags.Append(fmt.Errorf("error loading state: %w", err))
-		return nil, nil, nil, diags
-	}
-	log.Printf("[TRACE] backend/local: reading remote state for workspace %q", op.Workspace)
-	if err := s.RefreshState(); err != nil {
 		diags = diags.Append(fmt.Errorf("error loading state: %w", err))
 		return nil, nil, nil, diags
 	}
@@ -59,6 +54,12 @@ func (b *Backend) localRun(op *backend.Operation) (*backend.LocalRun, *configloa
 	}
 	coreOpts.UIInput = op.UIIn
 	coreOpts.Hooks = op.Hooks
+
+	if op.KeepAlive {
+		// For keeping providers alive across commands
+		coreOpts.KeepAlive = true
+		coreOpts.ProviderCache = op.ProviderCache
+	}
 
 	var ctxDiags tfdiags.Diagnostics
 	var configSnap *configload.Snapshot
@@ -137,6 +138,7 @@ func (b *Backend) localRunDirect(op *backend.Operation, run *backend.LocalRun, c
 		SetVariables:       variables,
 		SkipRefresh:        op.Type != backend.OperationTypeRefresh && !op.PlanRefresh,
 		GenerateConfigPath: op.GenerateConfigOut,
+		Cache:              op.Cache,
 	}
 	run.PlanOpts = planOpts
 
@@ -144,17 +146,13 @@ func (b *Backend) localRunDirect(op *backend.Operation, run *backend.LocalRun, c
 	// snapshot, from the previous run.
 	run.InputState = s.State()
 
-	if b.tfCtx == nil {
-		tfCtx, moreDiags := terraform.NewContext(coreOpts)
-		diags = diags.Append(moreDiags)
-		if moreDiags.HasErrors() {
-			return nil, nil, diags
-		}
-
-		b.tfCtx = tfCtx
+	tfCtx, moreDiags := terraform.NewContext(coreOpts)
+	diags = diags.Append(moreDiags)
+	if moreDiags.HasErrors() {
+		return nil, nil, diags
 	}
+	run.Core = tfCtx
 
-	run.Core = b.tfCtx
 	return run, configSnap, diags
 }
 

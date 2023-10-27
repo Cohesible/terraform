@@ -48,6 +48,8 @@ type ConfigTransformer struct {
 	// try to delete the imported resource unless the config is updated
 	// manually.
 	generateConfigPathForImportTargets string
+
+	Cache *Cache
 }
 
 func (t *ConfigTransformer) Transform(g *Graph) error {
@@ -147,6 +149,7 @@ func (t *ConfigTransformer) transformSingle(g *Graph, config *configs.Config, ge
 				Module:   path,
 			},
 			importTargets: imports,
+			cache:         t.Cache,
 		}
 
 		var node dag.Vertex = abstract
@@ -181,6 +184,7 @@ func (t *ConfigTransformer) transformSingle(g *Graph, config *configs.Config, ge
 			Addr:               i.Addr.ConfigResource(),
 			importTargets:      []*ImportTarget{i},
 			generateConfigPath: generateConfigPath,
+			cache:              t.Cache,
 		}
 
 		var node dag.Vertex = abstract

@@ -183,7 +183,7 @@ func (b *ApplyGraphBuilder) Steps() []GraphTransformer {
 		&TargetsTransformer{Targets: b.Targets},
 
 		// Close opened plugin connections
-		&CloseProviderTransformer{},
+		&CloseProviderTransformer{skip: b.Plugins.KeepAlive},
 
 		// close the root module
 		&CloseRootModuleTransformer{},

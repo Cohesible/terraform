@@ -372,6 +372,8 @@ func providerFactory(meta *providercache.CachedProvider) providers.Factory {
 			return nil, err
 		}
 
+		log.Printf("[INFO] creating new provider client %s", meta.Provider)
+
 		config := &plugin.ClientConfig{
 			HandshakeConfig:  tfplugin.Handshake,
 			Logger:           logging.NewProviderLogger(""),

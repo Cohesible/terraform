@@ -138,9 +138,6 @@ type Backend struct {
 	// Operation. See Operation for more details.
 	ContextOpts *terraform.ContextOpts
 
-	// Cached context
-	tfCtx *terraform.Context
-
 	// OpInput will ask for necessary input prior to performing any operations.
 	//
 	// OpValidation will perform validation prior to running an operation. The

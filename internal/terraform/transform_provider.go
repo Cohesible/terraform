@@ -247,9 +247,15 @@ func (t *ProviderTransformer) Transform(g *Graph) error {
 // graph that will close open provider connections that aren't needed anymore.
 // A provider connection is not needed anymore once all depended resources
 // in the graph are evaluated.
-type CloseProviderTransformer struct{}
+type CloseProviderTransformer struct{ skip bool }
 
 func (t *CloseProviderTransformer) Transform(g *Graph) error {
+	if t.skip {
+		log.Printf("[INFO] skipped closing providers")
+
+		return nil
+	}
+
 	pm := providerVertexMap(g)
 	cpm := make(map[string]*graphNodeCloseProvider)
 	var err error

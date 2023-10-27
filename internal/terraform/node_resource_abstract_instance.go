@@ -213,7 +213,7 @@ func (n *NodeAbstractResourceInstance) preApplyHook(ctx EvalContext, change *pla
 }
 
 // postApplyHook calls the post-Apply hook
-func (n *NodeAbstractResourceInstance) postApplyHook(ctx EvalContext, state *states.ResourceInstanceObject, err error) tfdiags.Diagnostics {
+func (n *NodeAbstractResourceInstance) postApplyHook(ctx EvalContext, state *states.ResourceInstanceObject, err error, src *states.ResourceInstanceObjectSrc) tfdiags.Diagnostics {
 	var diags tfdiags.Diagnostics
 
 	// Only managed resources have user-visible apply actions.
@@ -225,7 +225,7 @@ func (n *NodeAbstractResourceInstance) postApplyHook(ctx EvalContext, state *sta
 			newState = cty.NullVal(cty.DynamicPseudoType)
 		}
 		diags = diags.Append(ctx.Hook(func(h Hook) (HookAction, error) {
-			return h.PostApply(n.Addr, nil, newState, err)
+			return h.PostApply(n.Addr, nil, newState, err, src)
 		}))
 	}
 
@@ -252,7 +252,9 @@ const (
 // targetState determines which context state we're writing to during plan. The
 // default is the global working state.
 func (n *NodeAbstractResourceInstance) writeResourceInstanceState(ctx EvalContext, obj *states.ResourceInstanceObject, targetState phaseState) error {
-	return n.writeResourceInstanceStateImpl(ctx, states.NotDeposed, obj, targetState)
+	_, err := n.writeResourceInstanceStateImpl(ctx, states.NotDeposed, obj, targetState)
+
+	return err
 }
 
 func (n *NodeAbstractResourceInstance) writeResourceInstanceStateDeposed(ctx EvalContext, deposedKey states.DeposedKey, obj *states.ResourceInstanceObject, targetState phaseState) error {
@@ -261,18 +263,23 @@ func (n *NodeAbstractResourceInstance) writeResourceInstanceStateDeposed(ctx Eva
 		// caller seems to have intended.
 		panic("trying to write current state object using writeResourceInstanceStateDeposed")
 	}
-	return n.writeResourceInstanceStateImpl(ctx, deposedKey, obj, targetState)
+	_, err := n.writeResourceInstanceStateImpl(ctx, deposedKey, obj, targetState)
+	return err
+}
+
+func (n *NodeAbstractResourceInstance) writeResourceInstanceStateSrc(ctx EvalContext, obj *states.ResourceInstanceObject, targetState phaseState) (*states.ResourceInstanceObjectSrc, error) {
+	return n.writeResourceInstanceStateImpl(ctx, states.NotDeposed, obj, targetState)
 }
 
 // (this is the private common body of both writeResourceInstanceState and
 // writeResourceInstanceStateDeposed. Don't call it directly; instead, use
 // one of the two wrappers to be explicit about which of the instance's
 // objects you are intending to write.
-func (n *NodeAbstractResourceInstance) writeResourceInstanceStateImpl(ctx EvalContext, deposedKey states.DeposedKey, obj *states.ResourceInstanceObject, targetState phaseState) error {
+func (n *NodeAbstractResourceInstance) writeResourceInstanceStateImpl(ctx EvalContext, deposedKey states.DeposedKey, obj *states.ResourceInstanceObject, targetState phaseState) (*states.ResourceInstanceObjectSrc, error) {
 	absAddr := n.Addr
 	_, providerSchema, err := getProvider(ctx, n.ResolvedProvider)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	logFuncName := "NodeAbstractResouceInstance.writeResourceInstanceState"
 	if deposedKey == states.NotDeposed {
@@ -299,7 +306,7 @@ func (n *NodeAbstractResourceInstance) writeResourceInstanceStateImpl(ctx EvalCo
 		// (We can also get in here for unit tests which are using
 		// EvalContextMock but not populating PrevRunStateState with
 		// a suitable state object.)
-		return fmt.Errorf("state of type %s is not applicable to the current operation; this is a bug in Terraform", targetState)
+		return nil, fmt.Errorf("state of type %s is not applicable to the current operation; this is a bug in Terraform", targetState)
 	}
 
 	// In spite of the name, this function also handles the non-deposed case
@@ -320,7 +327,7 @@ func (n *NodeAbstractResourceInstance) writeResourceInstanceStateImpl(ctx EvalCo
 		// No need to encode anything: we'll just write it directly.
 		write(nil)
 		log.Printf("[TRACE] %s: removing state object for %s", logFuncName, absAddr)
-		return nil
+		return nil, nil
 	}
 
 	if providerSchema == nil {
@@ -339,16 +346,16 @@ func (n *NodeAbstractResourceInstance) writeResourceInstanceStateImpl(ctx EvalCo
 		// It shouldn't be possible to get this far in any real scenario
 		// without a schema, but we might end up here in contrived tests that
 		// fail to set up their world properly.
-		return fmt.Errorf("failed to encode %s in state: no resource type schema available", absAddr)
+		return nil, fmt.Errorf("failed to encode %s in state: no resource type schema available", absAddr)
 	}
 
 	src, err := obj.Encode(schema.ImpliedType(), currentVersion)
 	if err != nil {
-		return fmt.Errorf("failed to encode %s in state: %s", absAddr, err)
+		return nil, fmt.Errorf("failed to encode %s in state: %s", absAddr, err)
 	}
 
 	write(src)
-	return nil
+	return src, nil
 }
 
 // planDestroy returns a plain destroy diff.
@@ -855,9 +862,12 @@ func (n *NodeAbstractResourceInstance) plan(
 			// but we will generate a warning about it so that we are more likely
 			// to notice in the logs if an inconsistency beyond the type system
 			// leads to a downstream provider failure.
+
+			// This causes a lot of noise in the logs.
+
 			var buf strings.Builder
 			fmt.Fprintf(&buf,
-				"[WARN] Provider %q produced an invalid plan for %s, but we are tolerating it because it is using the legacy plugin SDK.\n    The following problems may be the cause of any confusing errors from downstream operations:",
+				"[TRACE] Provider %q produced an invalid plan for %s, but we are tolerating it because it is using the legacy plugin SDK.\n    The following problems may be the cause of any confusing errors from downstream operations:",
 				n.ResolvedProvider.Provider, n.Addr,
 			)
 			for _, err := range errs {
@@ -1433,6 +1443,14 @@ func (n *NodeAbstractResourceInstance) readDataSource(ctx EvalContext, configVal
 		return newVal, diags
 	}
 
+	// TODO: check err?
+	if n.cache != nil {
+		cachedVal, _ := n.cache.GetCachedValue(n.Addr.ConfigResource(), configVal)
+		if cachedVal != nil {
+			return *cachedVal, nil
+		}
+	}
+
 	// Unmark before sending to provider, will re-mark before returning
 	var pvm []cty.PathValueMarks
 	configVal, pvm = configVal.UnmarkDeepWithPaths()
@@ -1525,8 +1543,12 @@ func (n *NodeAbstractResourceInstance) readDataSource(ctx EvalContext, configVal
 	}
 
 	diags = diags.Append(ctx.Hook(func(h Hook) (HookAction, error) {
-		return h.PostApply(n.Addr, states.CurrentGen, newVal, diags.Err())
+		return h.PostApply(n.Addr, states.CurrentGen, newVal, diags.Err(), nil)
 	}))
+
+	if n.cache != nil {
+		n.cache.SetCachedValue(n.Addr.ConfigResource(), &newVal)
+	}
 
 	return newVal, diags
 }
@@ -1885,7 +1907,7 @@ func (n *NodeAbstractResourceInstance) applyDataSource(ctx EvalContext, planned 
 	diags = diags.Append(checkDiags)
 	if diags.HasErrors() {
 		diags = diags.Append(ctx.Hook(func(h Hook) (HookAction, error) {
-			return h.PostApply(n.Addr, states.CurrentGen, planned.Before, diags.Err())
+			return h.PostApply(n.Addr, states.CurrentGen, planned.Before, diags.Err(), nil)
 		}))
 		return nil, keyData, diags // failed preconditions prevent further evaluation
 	}

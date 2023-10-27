@@ -109,6 +109,24 @@ func (a *Allocator) ImportState() (ret *map[string]ExportedResource, diags tfdia
 	return a.imported, nil
 }
 
+func (a *Allocator) GetRefs(ctx EvalContext, addr addrs.Resource) ([]*addrs.Reference, tfdiags.Diagnostics) {
+	var diags tfdiags.Diagnostics
+
+	rConfig := a.Config.Module.ResourceByAddr(addr)
+	if rConfig == nil {
+		return nil, diags.Append(fmt.Errorf("missing resource config %s", addr))
+	}
+
+	providerAddr := a.Config.ResolveAbsProviderAddr(rConfig.ProviderConfigAddr(), addrs.RootModule)
+	schema, _, schemaDiags := a.GetSchema(ctx, addr, providerAddr)
+	diags.Append(schemaDiags)
+	if diags.HasErrors() {
+		return nil, diags
+	}
+
+	return lang.ReferencesInBlock(rConfig.Config, schema)
+}
+
 type ApplyResult struct {
 	State         *states.ResourceInstanceObject
 	Schema        *configschema.Block

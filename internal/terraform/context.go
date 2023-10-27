@@ -45,6 +45,8 @@ type ContextOpts struct {
 	Provisioners    map[string]provisioners.Factory
 	Installer       *providercache.Installer
 	PersistLockFile func(*depsfile.Locks) tfdiags.Diagnostics
+	KeepAlive       bool
+	ProviderCache   map[string]*CachedProvider
 
 	UIInput UIInput
 }
@@ -93,6 +95,10 @@ type Context struct {
 	runContextCancel    context.CancelFunc
 }
 
+func (c *Context) GetProviderCache() map[string]*CachedProvider {
+	return c.plugins.ProviderCache
+}
+
 // (additional methods on Context can be found in context_*.go files.)
 
 // NewContext creates a new Context structure.
@@ -132,7 +138,11 @@ func NewContext(opts *ContextOpts) (*Context, tfdiags.Diagnostics) {
 		par = 10
 	}
 
-	plugins := newContextPlugins(opts.Providers, opts.Provisioners, opts.Installer, opts.PersistLockFile)
+	plugins := newContextPlugins(opts.Providers, opts.Provisioners, opts.Installer, opts.PersistLockFile, opts.KeepAlive)
+	if opts.ProviderCache != nil {
+		plugins.SetCache(opts.ProviderCache)
+		log.Printf("[INFO] terraform.NewContext: set provider cache")
+	}
 
 	log.Printf("[TRACE] terraform.NewContext: complete")
 

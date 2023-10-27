@@ -27,6 +27,7 @@ func (b *Remote) LocalRun(op *backend.Operation) (*backend.LocalRun, statemgr.Fu
 		PlanOpts: &terraform.PlanOpts{
 			Mode:    op.PlanMode,
 			Targets: op.Targets,
+			Cache:   op.Cache,
 		},
 	}
 
@@ -70,6 +71,12 @@ func (b *Remote) LocalRun(op *backend.Operation) (*backend.LocalRun, statemgr.Fu
 
 	// Copy set options from the operation
 	opts.UIInput = op.UIIn
+
+	if op.KeepAlive {
+		// For keeping providers alive across commands
+		opts.KeepAlive = true
+		opts.ProviderCache = op.ProviderCache
+	}
 
 	// Load the latest state. If we enter contextFromPlanFile below then the
 	// state snapshot in the plan file must match this, or else it'll return

@@ -61,6 +61,18 @@ func (v *JSONView) Log(message string) {
 	v.log.Info(message, "type", json.MessageLog)
 }
 
+func (v *JSONView) Result(data []byte) {
+	v.log.Info(
+		"Result",
+		"type", json.MessageResult,
+		"data", encJson.RawMessage(data),
+	)
+}
+
+func (v *JSONView) Ready() {
+	v.log.Info("Ready", "type", json.MessageReady)
+}
+
 func (v *JSONView) StateDump(state string) {
 	v.log.Info(
 		"Emergency state dump",

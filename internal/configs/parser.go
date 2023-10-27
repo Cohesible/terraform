@@ -29,6 +29,10 @@ type Parser struct {
 	allowExperiments bool
 
 	UseTests bool
+
+	// Doesn't do much, most of the slowness is due to remote calls and/or
+	// downstream control planes. Parsing the JSON files is fast.
+	fileCache map[string]*File
 }
 
 // NewParser creates and returns a new Parser that reads files from the given
@@ -40,8 +44,9 @@ func NewParser(fs afero.Fs) *Parser {
 	}
 
 	return &Parser{
-		fs: afero.Afero{Fs: fs},
-		p:  hclparse.NewParser(),
+		fs:        afero.Afero{Fs: fs},
+		p:         hclparse.NewParser(),
+		fileCache: map[string]*File{},
 	}
 }
 
