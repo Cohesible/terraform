@@ -195,6 +195,7 @@ func (cp *contextPlugins) ProviderSchema(addr addrs.Provider) (*ProviderSchema, 
 		return schema, nil
 	}
 
+	// We don't really need to cache this. It's very fast.
 	resp := provider.GetProviderSchema()
 	if resp.Diagnostics.HasErrors() {
 		return nil, fmt.Errorf("failed to retrieve schema from provider %q: %s", addr, resp.Diagnostics.Err())

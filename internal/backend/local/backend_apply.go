@@ -120,6 +120,12 @@ func (b *Local) opApply(
 			testHookStopPlanApply()
 		}
 
+		if trivialPlan {
+			runningOp.Result = backend.OperationSuccess
+			op.ProviderCache = lr.Core.GetProviderCache()
+			return
+		}
+
 		// Check if we've been stopped before going through confirmation, or
 		// skipping confirmation in the case of -auto-approve.
 		// This can currently happen if a single stop request was received
