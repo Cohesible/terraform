@@ -762,27 +762,30 @@ func (n *NodeAbstractResourceInstance) plan(
 		priorVal = cty.NullVal(schema.ImpliedType())
 	}
 
-	log.Printf("[TRACE] Re-validating config for %q", n.Addr)
-	// Allow the provider to validate the final set of values.  The config was
-	// statically validated early on, but there may have been unknown values
-	// which the provider could not validate at the time.
-	//
-	// TODO: It would be more correct to validate the config after
-	// ignore_changes has been applied, but the current implementation cannot
-	// exclude computed-only attributes when given the `all` option.
+	// Do not validate configs from builtin resources
+	if n.ResolvedProvider.Provider.Type != "cloudscript" {
+		log.Printf("[TRACE] Re-validating config for %q", n.Addr)
+		// Allow the provider to validate the final set of values.  The config was
+		// statically validated early on, but there may have been unknown values
+		// which the provider could not validate at the time.
+		//
+		// TODO: It would be more correct to validate the config after
+		// ignore_changes has been applied, but the current implementation cannot
+		// exclude computed-only attributes when given the `all` option.
 
-	// we must unmark and use the original config, since the ignore_changes
-	// handling below needs access to the marks.
-	unmarkedConfigVal, _ := origConfigVal.UnmarkDeep()
-	validateResp := provider.ValidateResourceConfig(
-		providers.ValidateResourceConfigRequest{
-			TypeName: n.Addr.Resource.Resource.Type,
-			Config:   unmarkedConfigVal,
-		},
-	)
-	diags = diags.Append(validateResp.Diagnostics.InConfigBody(config.Config, n.Addr.String()))
-	if diags.HasErrors() {
-		return nil, nil, keyData, diags
+		// we must unmark and use the original config, since the ignore_changes
+		// handling below needs access to the marks.
+		unmarkedConfigVal, _ := origConfigVal.UnmarkDeep()
+		validateResp := provider.ValidateResourceConfig(
+			providers.ValidateResourceConfigRequest{
+				TypeName: n.Addr.Resource.Resource.Type,
+				Config:   unmarkedConfigVal,
+			},
+		)
+		diags = diags.Append(validateResp.Diagnostics.InConfigBody(config.Config, n.Addr.String()))
+		if diags.HasErrors() {
+			return nil, nil, keyData, diags
+		}
 	}
 
 	// ignore_changes is meant to only apply to the configuration, so it must

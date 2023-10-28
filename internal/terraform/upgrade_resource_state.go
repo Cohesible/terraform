@@ -32,6 +32,14 @@ func upgradeResourceState(addr addrs.AbsResourceInstance, provider providers.Int
 		return src, nil
 	}
 
+	// TODO: This should eventually use a proper FQN.
+	providerType := addr.Resource.Resource.ImpliedProvider()
+
+	if providerType == "cloudscript" {
+		log.Printf("[DEBUG] skipping state upgrade for builtin resource %q", addr)
+		return src, nil
+	}
+
 	// Remove any attributes from state that are not present in the schema.
 	// This was previously taken care of by the provider, but data sources do
 	// not go through the UpgradeResourceState process.
@@ -45,8 +53,6 @@ func upgradeResourceState(addr addrs.AbsResourceInstance, provider providers.Int
 
 	stateIsFlatmap := len(src.AttrsJSON) == 0
 
-	// TODO: This should eventually use a proper FQN.
-	providerType := addr.Resource.Resource.ImpliedProvider()
 	if src.SchemaVersion > currentVersion {
 		log.Printf("[TRACE] upgradeResourceState: can't downgrade state for %s from version %d to %d", addr, src.SchemaVersion, currentVersion)
 		var diags tfdiags.Diagnostics
@@ -181,7 +187,7 @@ func removeRemovedAttrs(v interface{}, ty cty.Type) bool {
 			return modified
 
 		case ty == cty.DynamicPseudoType:
-			log.Printf("[DEBUG] UpgradeResourceState: ignoring dynamic block: %#v\n", v)
+			log.Printf("[DEBUG] UpgradeResourceState: ignoring dynamic block")
 			return false
 
 		case ty.IsObjectType():
