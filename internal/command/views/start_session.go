@@ -31,6 +31,7 @@ type StartSession interface {
 	Ready()
 
 	PrintRefs(refs []*addrs.Reference) error
+	PrintData(data []byte)
 }
 
 func NewStartSession(vt arguments.ViewType, view *View) StartSession {
@@ -114,6 +115,10 @@ func (v *StartSessionHuman) Ready() {
 	v.view.streams.Print(v.view.colorize.Color("[reset][bold][green]Ready\n\n"))
 }
 
+func (v *StartSessionHuman) PrintData(data []byte) {
+	v.view.streams.Print(string(data))
+}
+
 func (v *StartSessionHuman) PrintRefs(refs []*addrs.Reference) error {
 	for _, ref := range refs {
 		v.view.streams.Println(ref.DisplayString())
@@ -171,6 +176,10 @@ func (v *StartSessionJSON) HelpPrompt() {
 
 func (v *StartSessionJSON) Ready() {
 	v.view.Ready()
+}
+
+func (v *StartSessionJSON) PrintData(data []byte) {
+	v.view.Result(data)
 }
 
 type reference struct {

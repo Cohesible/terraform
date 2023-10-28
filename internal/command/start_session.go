@@ -5,6 +5,8 @@ package command
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -15,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform/internal/command/arguments"
 	"github.com/hashicorp/terraform/internal/command/views"
 	"github.com/hashicorp/terraform/internal/plans"
+	"github.com/hashicorp/terraform/internal/states/statefile"
 	"github.com/hashicorp/terraform/internal/states/statemgr"
 	"github.com/hashicorp/terraform/internal/terraform"
 	"github.com/hashicorp/terraform/internal/tfdiags"
@@ -224,8 +227,13 @@ func (c *StartSessionCommand) handleInput(be backend.Enhanced, args *arguments.S
 		return diags
 	}
 
-	c.ProviderCache = opReq.ProviderCache
-	c.StateManager = opReq.StateManager
+	if opReq.ProviderCache != nil {
+		c.ProviderCache = opReq.ProviderCache
+	}
+
+	if opReq.StateManager != nil {
+		c.StateManager = opReq.StateManager
+	}
 
 	// Render the resource count and outputs, unless those counts are being
 	// rendered already in a remote Terraform process.
@@ -275,6 +283,22 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 		case "reload-config":
 			// Dump the config cache
 			c.configLoader = nil
+		case "get-state":
+			if c.StateManager == nil {
+				view.Diagnostics(tfdiags.Diagnostics{}.Append(fmt.Errorf("No state manager available")))
+				continue
+			}
+
+			s := c.StateManager.State()
+			f := statefile.New(s, "", 0)
+			var buf bytes.Buffer
+			err := statefile.Write(f, &buf)
+			if err != nil {
+				view.Diagnostics(tfdiags.Diagnostics{}.Append(err))
+				continue
+			}
+
+			view.PrintData(json.RawMessage(buf.Bytes()))
 		case "apply-config":
 			rAddr, d := addrs.ParseAbsResourceStr(parts[1])
 			if d.HasErrors() {
