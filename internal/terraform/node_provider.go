@@ -25,11 +25,14 @@ var (
 
 // GraphNodeExecutable
 func (n *NodeApplyableProvider) Execute(ctx EvalContext, op walkOperation) (diags tfdiags.Diagnostics) {
+	log.Printf("[TRACE] NodeApplyableProvider: initializing %s", n.Addr)
 	_, err := ctx.InitProvider(n.Addr)
 	diags = diags.Append(err)
 	if diags.HasErrors() {
 		return diags
 	}
+
+	log.Printf("[TRACE] NodeApplyableProvider: getting %s", n.Addr)
 	provider, _, err := getProvider(ctx, n.Addr)
 	diags = diags.Append(err)
 	if diags.HasErrors() {
@@ -104,6 +107,7 @@ func (n *NodeApplyableProvider) ConfigureProvider(ctx EvalContext, provider prov
 
 	configBody := buildProviderConfig(ctx, n.Addr, config)
 
+	log.Printf("[TRACE] NodeApplyableProvider: getting provider schema %s", n.Addr)
 	resp := provider.GetProviderSchema()
 	diags = diags.Append(resp.Diagnostics.InConfigBody(configBody, n.Addr.String()))
 	if diags.HasErrors() {
@@ -127,6 +131,13 @@ func (n *NodeApplyableProvider) ConfigureProvider(ctx EvalContext, provider prov
 		return diags
 	}
 
+	if n.Cache != nil {
+		val, _ := n.Cache.GetCachedValidation(n.Addr, configVal)
+		if val != nil {
+			return diags
+		}
+	}
+
 	// If our config value contains any marked values, ensure those are
 	// stripped out before sending this to the provider
 	unmarkedConfigVal, _ := configVal.UnmarkDeep()
@@ -136,6 +147,9 @@ func (n *NodeApplyableProvider) ConfigureProvider(ctx EvalContext, provider prov
 	req := providers.ValidateProviderConfigRequest{
 		Config: unmarkedConfigVal,
 	}
+
+	// The validation request is fairly slow for the AWS provider, taking 50+ ms to return
+	log.Printf("[TRACE] NodeApplyableProvider: validating config for %s", n.Addr)
 
 	// ValidateProviderConfig is only used for validation. We are intentionally
 	// ignoring the PreparedConfig field to maintain existing behavior.
@@ -163,6 +177,7 @@ func (n *NodeApplyableProvider) ConfigureProvider(ctx EvalContext, provider prov
 		log.Printf("[WARN] ValidateProviderConfig from %q changed the config value, but that value is unused", n.Addr)
 	}
 
+	log.Printf("[TRACE] NodeApplyableProvider: sending configuration request for %s", n.Addr)
 	configDiags := ctx.ConfigureProvider(n.Addr, unmarkedConfigVal)
 	diags = diags.Append(configDiags.InConfigBody(configBody, n.Addr.String()))
 	if diags.HasErrors() && config == nil {
@@ -175,6 +190,13 @@ func (n *NodeApplyableProvider) ConfigureProvider(ctx EvalContext, provider prov
 			fmt.Sprintf(providerConfigErr, n.Addr.Provider),
 		))
 	}
+
+	if !diags.HasErrors() && n.Cache != nil {
+		n.Cache.SetCachedValidation(n.Addr, &configVal)
+	}
+
+	log.Printf("[TRACE] NodeApplyableProvider: finished configuring %s", n.Addr)
+
 	return diags
 }
 

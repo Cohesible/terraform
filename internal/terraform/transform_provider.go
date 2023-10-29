@@ -14,12 +14,13 @@ import (
 	"github.com/hashicorp/terraform/internal/tfdiags"
 )
 
-func transformProviders(concrete ConcreteProviderNodeFunc, config *configs.Config) GraphTransformer {
+func transformProviders(concrete ConcreteProviderNodeFunc, config *configs.Config, cache *Cache) GraphTransformer {
 	return GraphTransformMulti(
 		// Add providers from the config
 		&ProviderConfigTransformer{
 			Config:   config,
 			Concrete: concrete,
+			Cache:    cache,
 		},
 		// Add any remaining missing providers
 		&MissingProviderTransformer{
@@ -492,6 +493,8 @@ type ProviderConfigTransformer struct {
 
 	// Config is the root node of the configuration tree to add providers from.
 	Config *configs.Config
+
+	Cache *Cache
 }
 
 func (t *ProviderConfigTransformer) Transform(g *Graph) error {
@@ -560,7 +563,8 @@ func (t *ProviderConfigTransformer) transformSingle(g *Graph, c *configs.Config)
 			}
 
 			abstract := &NodeAbstractProvider{
-				Addr: addr,
+				Addr:  addr,
+				Cache: t.Cache,
 			}
 
 			var v dag.Vertex
@@ -592,7 +596,8 @@ func (t *ProviderConfigTransformer) transformSingle(g *Graph, c *configs.Config)
 		}
 
 		abstract := &NodeAbstractProvider{
-			Addr: addr,
+			Addr:  addr,
+			Cache: t.Cache,
 		}
 		var v dag.Vertex
 		if t.Concrete != nil {

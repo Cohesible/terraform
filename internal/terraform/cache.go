@@ -27,8 +27,7 @@ func NewCache() *Cache {
 	}
 }
 
-func (c *Cache) getCached(addr addrs.ConfigResource) *cached {
-	key := addr.String()
+func (c *Cache) getCached(key string) *cached {
 	c.locks.Lock(key)
 	defer c.locks.Unlock(key)
 	if v, ok := c.values[key]; ok {
@@ -42,7 +41,7 @@ func (c *Cache) getCached(addr addrs.ConfigResource) *cached {
 }
 
 func (c *Cache) GetCachedValue(resource addrs.ConfigResource, configVal cty.Value) (*cty.Value, error) {
-	cached := c.getCached(resource)
+	cached := c.getCached(resource.String())
 	if cached.input == nil {
 		log.Printf("[TRACE] Cache: data source cache init %s", resource)
 
@@ -67,7 +66,37 @@ func (c *Cache) GetCachedValue(resource addrs.ConfigResource, configVal cty.Valu
 
 func (c *Cache) SetCachedValue(resource addrs.ConfigResource, val *cty.Value) {
 	log.Printf("[TRACE] Cache: caching result for %s", resource)
-	cached := c.getCached(resource)
+	cached := c.getCached(resource.String())
+	cached.output = val
+}
+
+func (c *Cache) GetCachedValidation(provider addrs.AbsProviderConfig, configVal cty.Value) (*cty.Value, error) {
+	cached := c.getCached(provider.String())
+	if cached.input == nil {
+		log.Printf("[TRACE] Cache: validation cache init %s", provider)
+
+		cached.input = &configVal
+
+		return nil, nil
+	}
+
+	cmp := cached.input.Equals(configVal)
+	if cmp.IsKnown() && cmp.True() {
+		log.Printf("[TRACE] Cache: validation cache hit %s", provider)
+
+		return cached.output, nil
+	}
+
+	log.Printf("[TRACE] Cache: validation cache miss %s", provider)
+
+	cached.input = &configVal
+
+	return nil, nil
+}
+
+func (c *Cache) SetCachedValidation(provider addrs.AbsProviderConfig, val *cty.Value) {
+	log.Printf("[TRACE] Cache: caching validation for %s", provider)
+	cached := c.getCached(provider.String())
 	cached.output = val
 }
 

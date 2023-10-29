@@ -339,6 +339,13 @@ func (n *nodeExpandPlannableResource) resourceInstanceSubgraph(ctx EvalContext, 
 		a.generateConfigPath = n.generateConfigPath
 		a.cache = n.cache
 
+		var skipRefresh bool
+		if n.Config.Managed != nil && n.Config.Managed.ForceRefresh {
+			skipRefresh = false
+		} else {
+			skipRefresh = n.skipRefresh
+		}
+
 		m = &NodePlannableResourceInstance{
 			NodeAbstractResourceInstance: a,
 
@@ -346,7 +353,7 @@ func (n *nodeExpandPlannableResource) resourceInstanceSubgraph(ctx EvalContext, 
 			// to force on CreateBeforeDestroy due to dependencies on other
 			// nodes that have it.
 			ForceCreateBeforeDestroy: n.CreateBeforeDestroy(),
-			skipRefresh:              n.skipRefresh,
+			skipRefresh:              skipRefresh,
 			skipPlanChanges:          n.skipPlanChanges,
 			forceReplace:             n.forceReplace,
 		}

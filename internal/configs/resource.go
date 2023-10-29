@@ -135,6 +135,8 @@ type ManagedResource struct {
 
 	CreateBeforeDestroySet bool
 	PreventDestroySet      bool
+
+	ForceRefresh bool
 }
 
 func (r *Resource) moduleUniqueKey() string {
@@ -343,6 +345,11 @@ func decodeResourceBlock(block *hcl.Block, override bool) (*Resource, hcl.Diagno
 					}
 
 				}
+			}
+
+			if attr, exists := lcContent.Attributes["force_refresh"]; exists {
+				valDiags := gohcl.DecodeExpression(attr.Expr, nil, &r.Managed.ForceRefresh)
+				diags = append(diags, valDiags...)
 			}
 
 			for _, block := range lcContent.Blocks {
@@ -896,6 +903,9 @@ var resourceLifecycleBlockSchema = &hcl.BodySchema{
 		},
 		{
 			Name: "replace_triggered_by",
+		},
+		{
+			Name: "force_refresh",
 		},
 	},
 	Blocks: []hcl.BlockHeaderSchema{

@@ -26,6 +26,8 @@ type NodeAbstractProvider struct {
 
 	Config *configs.Provider
 	Schema *configschema.Block
+
+	Cache *Cache
 }
 
 var (
