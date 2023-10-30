@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 
 	"github.com/hashicorp/terraform/internal/configs/configschema"
 	"github.com/hashicorp/terraform/internal/httpclient"
@@ -18,11 +19,7 @@ var _ providers.Interface = &CloudScriptProvider{}
 
 // CloudScriptProvider defines the provider implementation.
 type CloudScriptProvider struct {
-	// version is set to the provider version on release, "dev" when the
-	// provider is built and ran locally, and "test" when running acceptance
-	// testing.
-	version string
-	client  *ExampleClient
+	client *ExampleClient
 }
 
 // ImportResourceState implements providers.Interface.
@@ -215,12 +212,20 @@ func getStringValue(config cty.Value, attr string) string {
 
 func (p *CloudScriptProvider) ConfigureProvider(req providers.ConfigureProviderRequest) (resp providers.ConfigureProviderResponse) {
 	config := req.Config
+	workingDirectory := getWorkingDirectory(config)
+	resolvePath := func(p string) string {
+		if path.IsAbs(p) {
+			return p
+		}
+		return path.Join(workingDirectory, p)
+	}
+
 	client := ExampleClient{
 		HttpClient:       httpclient.NewRetryableClient(),
 		Endpoint:         getEndpoint(config),
-		WorkingDirectory: getStringValue(config, "workingDirectory"),
-		OutputDirectory:  getStringValue(config, "outputDirectory"),
-		BuildDirectory:   getStringValue(config, "buildDirectory"),
+		WorkingDirectory: workingDirectory,
+		OutputDirectory:  resolvePath(getStringValue(config, "outputDirectory")),
+		BuildDirectory:   resolvePath(getStringValue(config, "buildDirectory")),
 	}
 
 	p.client = &client
@@ -234,6 +239,14 @@ func getEndpoint(config cty.Value) string {
 	}
 
 	return getStringValue(config, "endpoint")
+}
+
+func getWorkingDirectory(config cty.Value) string {
+	if dir, exists := os.LookupEnv("TF_CLOUDSCRIPT_PROVIDER_WORKING_DIRECTORY"); exists {
+		return dir
+	}
+
+	return getStringValue(config, "workingDirectory")
 }
 
 func (p *CloudScriptProvider) PlanResourceChange(req providers.PlanResourceChangeRequest) (resp providers.PlanResourceChangeResponse) {
