@@ -248,6 +248,12 @@ func initCommands(
 			}, nil
 		},
 
+		"providers list": func() (cli.Command, error) {
+			return &command.ProvidersListCommand{
+				Meta: meta,
+			}, nil
+		},
+
 		"providers mirror": func() (cli.Command, error) {
 			return &command.ProvidersMirrorCommand{
 				Meta: meta,

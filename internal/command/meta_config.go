@@ -6,6 +6,7 @@ package command
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -123,9 +124,14 @@ func (m *Meta) loadBackendConfig(rootDir string) (*configs.Backend, tfdiags.Diag
 	return mod.Backend, nil
 }
 
-func (m *Meta) shouldInclude(moduleName, testSuiteId string) bool {
+func (m *Meta) shouldInclude(moduleName, testSuiteId, executionScope string) bool {
 	canInclude := (m.useTests && testSuiteId != "") || (!m.useTests && testSuiteId == "")
 	if !canInclude {
+		return false
+	}
+
+	// It's implied that these are debug symbols
+	if executionScope != "" {
 		return false
 	}
 
@@ -155,14 +161,18 @@ func (m *Meta) loadTargets(rootDir string) ([]addrs.Targetable, tfdiags.Diagnost
 
 		// FIXME: not robust code
 		var testSuiteId string
+		var executionScope string
 		if len(parts) > 1 {
-			fragment := parts[1]
-			if strings.HasPrefix(fragment, "test-suite=") {
-				testSuiteId = strings.TrimPrefix(fragment, "test-suite=")
+			values, err := url.ParseQuery(parts[1])
+			if err != nil {
+				return nil, diags.Append(err)
 			}
+
+			testSuiteId = values.Get("test-suite")
+			executionScope = values.Get("execution-scope")
 		}
 
-		if m.shouldInclude(moduleName, testSuiteId) {
+		if m.shouldInclude(moduleName, testSuiteId, executionScope) {
 			targets = append(targets, r.Addr().Absolute(addrs.RootModuleInstance))
 		}
 	}
