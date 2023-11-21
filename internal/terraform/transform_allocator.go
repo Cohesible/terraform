@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/hcl/v2"
 	tfaddr "github.com/hashicorp/terraform-registry-address"
@@ -27,6 +29,8 @@ import (
 	"github.com/hashicorp/terraform/internal/states"
 	"github.com/hashicorp/terraform/internal/tfdiags"
 	"github.com/zclconf/go-cty/cty"
+	"github.com/zclconf/go-cty/cty/gocty"
+	ctyjson "github.com/zclconf/go-cty/cty/json"
 )
 
 type cachedSchema struct {
@@ -127,26 +131,997 @@ func (a *Allocator) GetRefs(ctx EvalContext, addr addrs.Resource) ([]*addrs.Refe
 	return lang.ReferencesInBlock(rConfig.Config, schema)
 }
 
-type ApplyResult struct {
-	State         *states.ResourceInstanceObject
+type ResolveResult struct {
+	Provider      providers.Interface
+	ProviderAddr  addrs.AbsProviderConfig
+	Config        cty.Value
 	Schema        *configschema.Block
 	SchemaVersion uint64
 }
 
-func (a *Allocator) Apply(ctx EvalContext, addr addrs.Resource, c *configs.Resource) (*ApplyResult, tfdiags.Diagnostics) {
+type configBlock struct {
+	moduleName   string
+	attributes   map[string]*hcl.Attribute
+	dependencies []string
+}
+
+type configVertex struct {
+	config  *configs.Resource
+	subtype string
+	//schema        *configschema.Block
+	//schemaVersion uint64
+	//providerAddr  addrs.AbsProviderConfig
+	block  *configBlock
+	isLeaf bool
+}
+
+func getBlock(c *configs.Resource) (*configBlock, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 
-	rConfigAddr := a.Config.Module.ResourceByAddr(addr)
-	if rConfigAddr == nil {
-		return nil, diags.Append(fmt.Errorf("missing resource config %s", addr))
+	block := &configBlock{}
+	attrs, moreDiags := c.Config.JustAttributes()
+	diags = diags.Append(moreDiags)
+	if diags.HasErrors() {
+		return block, diags
 	}
 
-	providerAddr := a.Config.ResolveAbsProviderAddr(rConfigAddr.ProviderConfigAddr(), addrs.RootModule)
+	block.attributes = map[string]*hcl.Attribute{}
+	block.dependencies = make([]string, 0)
+	seen := map[string]bool{}
+	for k, v := range attrs {
+		block.attributes[k] = v
+
+		refs, refDiags := lang.ReferencesInExpr(v.Expr)
+		diags = diags.Append(refDiags)
+		if refDiags.HasErrors() {
+			continue
+		}
+
+		for _, r := range refs {
+			var key string
+			switch ref := r.Subject.(type) {
+			case addrs.Resource:
+				key = ref.Instance(addrs.NoKey).String()
+			case addrs.ResourceInstance:
+				key = ref.Resource.String()
+			default:
+				diags = diags.Append(fmt.Errorf("Bad ref: %s", ref))
+			}
+
+			if key != "" {
+				if alreadySeen := seen[key]; !alreadySeen {
+					seen[key] = true
+					block.dependencies = append(block.dependencies, key)
+				}
+			}
+		}
+	}
+
+	block.moduleName = c.ModuleName
+
+	return block, diags
+}
+
+func toSlice(val cty.Value) []cty.Value {
+	var vals []cty.Value
+	it := val.ElementIterator()
+	for it.Next() {
+		_, v := it.Element()
+		vals = append(vals, v)
+	}
+	return vals
+}
+
+func toMap(val cty.Value) map[string]cty.Value {
+	vals := map[string]cty.Value{}
+	it := val.ElementIterator()
+	for it.Next() {
+		k, v := it.Element()
+		vals[k.AsString()] = v
+	}
+	return vals
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func min3(a, b, c int) int {
+	if a < b {
+		if a < c {
+			return a
+		}
+		return c
+	}
+	if b < c {
+		return b
+	}
+	return c
+}
+
+func levenshteinDistance(a, b string) int {
+	if a == b {
+		return 0
+	} else if a == "" {
+		return len(b)
+	} else if b == "" {
+		return len(a)
+	}
+
+	n := len(a)
+	m := len(b)
+	dists := make([][]int, n)
+
+	for i := 0; i < n; i++ {
+		dists[i] = make([]int, m)
+		dists[i][0] = i
+	}
+
+	for j := 1; j < m; j++ {
+		dists[0][j] = j
+	}
+
+	for i := 1; i < n; i++ {
+		for j := 1; j < m; j++ {
+			var c int
+			if a[i] != b[j] {
+				c = 1
+			}
+			dists[i][j] = min3(
+				dists[i-1][j]+1,
+				dists[i][j-1]+1,
+				dists[i-1][j-1]+c,
+			)
+		}
+	}
+
+	return dists[n-1][m-1]
+}
+
+func ord(v cty.Value) int {
+	if v == cty.NilVal || !v.IsKnown() || v.IsNull() {
+		return 0
+	}
+
+	ty := v.Type()
+
+	switch {
+	case ty.IsListType() || ty.IsTupleType() || ty.IsSetType():
+		return distSlice(toSlice(v), []cty.Value{})
+	case ty.IsMapType() || ty.IsObjectType():
+		return distMap(toMap(v), map[string]cty.Value{})
+	case ty.IsPrimitiveType():
+		switch {
+		case ty == cty.String:
+			return len(v.AsString())
+		case ty == cty.Number:
+			var x int
+			_ = gocty.FromCtyValue(v, &x)
+			return abs(x)
+		case ty == cty.Bool:
+			return 1
+		default:
+			// Should never happen, since the above should cover all types
+			panic(fmt.Sprintf("omitUnknowns cannot handle %#v", v))
+		}
+	default:
+		// Should never happen, since the above should cover all types
+		panic(fmt.Sprintf("omitUnknowns cannot handle %#v", v))
+	}
+}
+
+func distSlice(a, b []cty.Value) int {
+	la := len(a)
+	lb := len(b)
+	if lb > la {
+		return distSlice(b, a)
+	}
+
+	var c, i int
+	for ; i < lb; i++ {
+		c += dist(a[i], b[i])
+	}
+
+	for ; i < la; i++ {
+		c += ord(a[i])
+	}
+
+	return c
+}
+
+func distMap(a, b map[string]cty.Value) int {
+	var c int
+
+	for k, v := range a {
+		if u, exists := b[k]; exists {
+			c += dist(v, u)
+		} else {
+			c += ord(v)
+		}
+	}
+
+	for k, u := range b {
+		if v, exists := a[k]; exists {
+			c += dist(v, u)
+		} else {
+			c += ord(u)
+		}
+	}
+
+	return c
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+func dist(a, b cty.Value) int {
+	if a == cty.NilVal || !a.IsKnown() || a.IsNull() {
+		return ord(b)
+	}
+
+	if b == cty.NilVal || !b.IsKnown() || b.IsNull() {
+		return ord(a)
+	}
+
+	aty := a.Type()
+	bty := b.Type()
+
+	switch {
+	case aty.IsListType() || aty.IsTupleType() || aty.IsSetType():
+		if !(bty.IsListType() || bty.IsTupleType() || bty.IsSetType()) {
+			return ord(a) + ord(b)
+		}
+		return distSlice(toSlice(a), toSlice(b))
+	case aty.IsMapType() || aty.IsObjectType():
+		if !(bty.IsMapType() || bty.IsObjectType()) {
+			return ord(a) + ord(b)
+		}
+		return distMap(toMap(a), toMap(b))
+	case aty.IsPrimitiveType():
+		if aty != bty {
+			// fmt.Printf("a:: %s\nb:: %s\n", aty.FriendlyName(), bty.FriendlyName())
+			return ord(a) + ord(b)
+		}
+		switch {
+		case aty == cty.String:
+			return levenshteinDistance(a.AsString(), b.AsString())
+		case aty == cty.Number:
+			var x, y int
+			_ = gocty.FromCtyValue(a, &x)
+			_ = gocty.FromCtyValue(b, &y)
+			return abs(x - y)
+		case aty == cty.Bool:
+			if a.True() == b.True() {
+				return 0
+			}
+			return 1
+		default:
+			// Should never happen, since the above should cover all types
+			panic(fmt.Sprintf("omitUnknowns cannot handle %#v", a))
+		}
+	default:
+		// Should never happen, since the above should cover all types
+		panic(fmt.Sprintf("omitUnknowns cannot handle %#v", a))
+	}
+}
+
+func evalContext(data evalData) (*hcl.EvalContext, tfdiags.Diagnostics) {
+	var diags tfdiags.Diagnostics
+	vals := make(map[string]cty.Value)
+	funcs := lang.MakeFunctions(".")
+	ctx := &hcl.EvalContext{
+		Variables: vals,
+		Functions: funcs,
+	}
+
+	// Managed resources are exposed in two different locations. The primary
+	// is at the top level where the resource type name is the root of the
+	// traversal, but we also expose them under "resource" as an escaping
+	// technique if we add a reserved name in a future language edition which
+	// conflicts with someone's existing provider.
+	for k, v := range buildResourceObjects(data.resources) {
+		vals[k] = v
+	}
+	//vals["resource"] = cty.ObjectVal(buildResourceObjects(managedResources))
+
+	vals["data"] = cty.ObjectVal(buildResourceObjects(data.data))
+	vals["local"] = cty.ObjectVal(data.locals)
+	//vals["path"] = cty.ObjectVal(pathAttrs)
+	//vals["terraform"] = cty.ObjectVal(terraformAttrs)
+
+	return ctx, diags
+}
+
+func buildResourceObjects(resources map[string]map[string]cty.Value) map[string]cty.Value {
+	vals := make(map[string]cty.Value)
+	for typeName, nameVals := range resources {
+		vals[typeName] = cty.ObjectVal(nameVals)
+	}
+	return vals
+}
+
+func applyMoves(vals map[string]cty.Value, moves map[string]string) map[string]cty.Value {
+	if len(moves) == 0 {
+		return map[string]cty.Value{}
+	}
+
+	// applied := map[string]bool{}
+	result := make(map[string]cty.Value)
+	for k, v := range vals {
+		if alt, exists := moves[k]; exists {
+			result[alt] = v
+			// applied[alt] = true
+		}
+	}
+
+	return result
+}
+
+func buildResourceObjectsWithMoves(resources map[string]map[string]cty.Value, moves map[string]map[string]string) map[string]cty.Value {
+	vals := make(map[string]cty.Value)
+	for typeName, nameVals := range resources {
+		if m, exists := moves[typeName]; exists {
+			//fmt.Printf("applied moves %s; len: %v", typeName, len(m))
+			vals[typeName] = cty.ObjectVal(applyMoves(nameVals, m))
+		} else {
+			// vals[typeName] = cty.ObjectVal(nameVals)
+		}
+	}
+	return vals
+}
+
+func evaluateBlock(ctx *hcl.EvalContext, block *configBlock) (cty.Value, tfdiags.Diagnostics) {
+	var diags tfdiags.Diagnostics
+	result := map[string]cty.Value{}
+	for k, v := range block.attributes {
+		val, evalDiags := v.Expr.Value(ctx)
+		diags = diags.Append(evalDiags)
+		result[k] = val
+	}
+	result["module_name"] = cty.StringVal(block.moduleName)
+	return cty.ObjectVal(result), diags
+}
+
+func buildGraph(c *configs.Config) (*Graph, tfdiags.Diagnostics) {
+	var diags tfdiags.Diagnostics
+
+	g := &Graph{Path: addrs.RootModuleInstance}
+	vertices := map[string]*configVertex{}
+
+	for k, v := range c.Module.ManagedResources {
+		// providerAddr := c.ResolveAbsProviderAddr(v.ProviderConfigAddr(), addrs.RootModule)
+		// schema, schemaVersion, schemaDiags := a.GetSchema(ctx, v.Addr(), providerAddr)
+		// diags = diags.Append(schemaDiags)
+		block, blockDiags := getBlock(v)
+		diags = diags.Append(blockDiags)
+
+		vert := &configVertex{
+			config: v,
+			// schema:        schema,
+			// schemaVersion: schemaVersion,
+			// providerAddr:  providerAddr,
+			block:  block,
+			isLeaf: true,
+		}
+
+		if v.Type == "cloudscript_resource" {
+			subtype, _ := configs.DecodeAsString(block.attributes["type"])
+			vert.subtype = subtype
+		}
+
+		vertices[k] = vert
+		g.Add(vert)
+	}
+
+	for _, v := range vertices {
+		for _, d := range v.block.dependencies {
+			if u, exists := vertices[d]; exists {
+				u.isLeaf = false
+				g.Connect(dag.BasicEdge(u, v))
+			}
+		}
+	}
+
+	return g, diags
+}
+
+func getVertices(g *Graph) []*configVertex {
+	n := g.TopologicalOrder()
+	a := make([]*configVertex, len(n))
+	for i, x := range n {
+		a[i] = x.(*configVertex)
+	}
+	return a
+}
+
+type resourceAddress struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
+
+type moveOp struct {
+	From resourceAddress `json:"from"`
+	To   resourceAddress `json:"to"`
+}
+
+type searchNode struct {
+	key         string
+	state       *evalData
+	score       int
+	previous    *searchNode
+	currentMove []int
+	pos         int
+}
+
+type evalData struct {
+	resources map[string]map[string]cty.Value
+	data      map[string]map[string]cty.Value
+	locals    map[string]cty.Value
+}
+
+func buildMoves(moves []int, v1, v2 []*configVertex) map[string]map[string]string {
+	result := map[string]map[string]string{}
+	for k := 0; k < len(moves); k += 2 {
+		u := v1[moves[k]]
+		v := v2[moves[k+1]]
+		if u.config.Name != v.config.Name {
+			m := result[u.config.Type]
+			if m == nil {
+				m = map[string]string{}
+				result[u.config.Type] = m
+			}
+			m[u.config.Name] = v.config.Name
+		}
+	}
+	return result
+}
+
+func createSearchContext(node *searchNode, v1, v2 []*configVertex) *hcl.EvalContext {
+	vals := make(map[string]cty.Value)
+	funcs := lang.MakeFunctions(".")
+	ctx := &hcl.EvalContext{
+		Variables: vals,
+		Functions: funcs,
+	}
+
+	moves := buildMoves(getMoves(node), v1, v2)
+
+	for k, v := range buildResourceObjectsWithMoves(node.state.resources, moves) {
+		vals[k] = v
+	}
+
+	vals["data"] = cty.ObjectVal(buildResourceObjects(node.state.data))
+	vals["local"] = cty.ObjectVal(node.state.locals)
+
+	return ctx
+}
+
+func getMoves(n *searchNode) []int {
+	moves := make([]int, 0)
+	if n.currentMove != nil && n.currentMove[0] != -1 {
+		moves = append(moves, n.currentMove...)
+	}
+	p := n.previous
+	for p != nil {
+		if p.currentMove != nil && p.currentMove[0] != -1 {
+			moves = append(moves, p.currentMove...)
+		}
+		p = p.previous
+	}
+	return moves
+}
+
+func buildNodeKey(n *searchNode) string {
+	moves := getMoves(n)
+	parts := make([]string, 0)
+	pq := PriorityQueue[string]{}
+	for k := 0; k < len(moves); k += 2 {
+		part := (moves[k] << 16) | moves[k+1]
+		pq.Insert(strconv.Itoa(part), moves[k+1])
+	}
+	for len(pq) > 0 {
+		part, _ := pq.Extract()
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, ":")
+}
+
+func getNodeKey(n *searchNode) string {
+	if n.key == "" && len(n.currentMove) > 0 {
+		n.key = buildNodeKey(n)
+	}
+	return n.key
+}
+
+type MovesResult struct {
+	Moves []moveOp `json:"moves"`
+	Score int      `json:"score"`
+}
+
+// TODO: impl. zhang-shasha TED algorithm over source maps
+// This should be much faster than path finding over pairs
+
+func FindMoves(s *states.State, c1, c2 *configs.Config) MovesResult {
+	g1, _ := buildGraph(c1)
+	g2, _ := buildGraph(c2)
+
+	myData := evalData{
+		locals:    map[string]cty.Value{},
+		resources: map[string]map[string]cty.Value{},
+		data:      map[string]map[string]cty.Value{},
+	}
+	ms := s.Module(addrs.RootModuleInstance)
+
+	for _, v := range ms.Resources {
+		inst := v.Instance(addrs.NoKey)
+		if inst == nil || !inst.HasCurrent() {
+			fmt.Printf("missing resource: %s\n", v.Addr)
+			continue
+		}
+
+		d := ctyjson.SimpleJSONValue{}
+		err := d.UnmarshalJSON(inst.Current.AttrsJSON)
+		if err != nil {
+			fmt.Printf("bad parse: %s: %s\n", v.Addr, err)
+			continue
+		}
+
+		var t map[string]map[string]cty.Value
+		if v.Addr.Resource.Mode == addrs.DataResourceMode {
+			t = myData.data
+		} else {
+			t = myData.resources
+		}
+		x, exists := t[v.Addr.Resource.Type]
+		if !exists {
+			x = map[string]cty.Value{}
+			t[v.Addr.Resource.Type] = x
+		}
+		x[v.Addr.Resource.Name] = d.Value
+	}
+
+	for k, v := range ms.LocalValues {
+		myData.locals[k] = v
+	}
+
+	ctx, _ := evalContext(myData)
+
+	v1 := getVertices(g1)
+	v2 := getVertices(g2)
+
+	baseline := make([]cty.Value, len(v1))
+	for i, v := range v1 {
+		x, _ := evaluateBlock(ctx, v.block)
+		baseline[i] = x
+		// b, _ := x.Type().MarshalJSON()
+		// fmt.Printf("evaluated %s: %s\n", v.config.Addr(), b)
+	}
+
+	pairs := make([][]int, len(v2))
+	for j, u := range v2 {
+		pairs[j] = make([]int, 0)
+		for i, v := range v1 {
+			if u.config.Type == v.config.Type && u.subtype == v.subtype {
+				pairs[j] = append(pairs[j], i)
+			}
+		}
+	}
+
+	// Sparse 3d matrix
+	dists := map[string]map[int]map[int]int{}
+	getDist := func(n *searchNode, i, j int) int {
+		k := getNodeKey(n)
+		m := dists[k]
+		if m == nil {
+			m = map[int]map[int]int{}
+			dists[k] = m
+		}
+
+		if m2, exists := m[i]; exists {
+			if d, exists := m2[j]; exists {
+				return d
+			}
+		}
+
+		return -1
+	}
+
+	setDist := func(n *searchNode, i, j, d int) {
+		k := getNodeKey(n)
+		m := dists[k]
+		if m == nil {
+			m = map[int]map[int]int{}
+			dists[k] = m
+		}
+		m2 := m[i]
+		if m2 == nil {
+			m2 = map[int]int{}
+			m[i] = m2
+		}
+		m2[j] = d
+	}
+
+	contexts := map[string]*hcl.EvalContext{}
+	getContext := func(n *searchNode) *hcl.EvalContext {
+		k := getNodeKey(n)
+		ctx := contexts[k]
+		if ctx == nil {
+			ctx = createSearchContext(n, v1, v2)
+			contexts[k] = ctx
+		}
+		return ctx
+	}
+
+	configs := map[string]map[int]cty.Value{}
+	getConfig := func(n *searchNode, j int) cty.Value {
+		k := getNodeKey(n)
+		m := configs[k]
+		if m == nil {
+			m = map[int]cty.Value{}
+			configs[k] = m
+		}
+		x, exists := m[j]
+		if !exists {
+			ctx := getContext(n)
+			x, _ = evaluateBlock(ctx, v2[j].block)
+			m[j] = x
+		}
+		return x
+	}
+
+	partials := map[string]map[int]map[int]int{}
+	getPartialDist := func(n *searchNode, i, j int) int {
+		k := getNodeKey(n)
+		m := partials[k]
+		if m == nil {
+			m = map[int]map[int]int{}
+			partials[k] = m
+		}
+		m2 := m[i]
+		if m2 == nil {
+			m2 = map[int]int{}
+			m[i] = m2
+		}
+		d, exists := m2[j]
+		if !exists {
+			x := getConfig(n, j)
+			if i == -1 {
+				d = ord(x)
+			} else {
+				v := baseline[i]
+				d = dist(v, x)
+			}
+			m2[j] = d
+		}
+		return d
+	}
+
+	bestcaseDists := make([][]int, len(v1))
+	for i := range v1 {
+		bestcaseDists[i] = make([]int, len(v2))
+		for j, v := range v2 {
+			d := 0
+			b := baseline[i]
+			block := v.block
+			b2 := b.AsValueMap()
+			unknowns := map[string]bool{}
+
+			for k, v := range block.attributes {
+				refs, _ := lang.ReferencesInExpr(v.Expr)
+				if len(refs) > 0 {
+					unknowns[k] = true
+				}
+			}
+			seen := map[string]bool{}
+			for k, v := range block.attributes {
+				seen[k] = true
+				if !unknowns[k] {
+					val, _ := v.Expr.Value(ctx)
+					d += dist(b2[k], val)
+				}
+			}
+			for k, v := range b2 {
+				if !seen[k] && k != "module_name" {
+					d += ord(v)
+				}
+			}
+
+			d += levenshteinDistance(v1[i].block.moduleName, v2[j].block.moduleName)
+			bestcaseDists[i][j] = d
+		}
+	}
+
+	// getBestCaseDistCache := map[string]map[int]map[int]map[string]int{}
+	// getBestCaseDist := func(n *searchNode, i, j int) int {
+	// 	moves := map[string]bool{}
+	// 	for k := 0; k < len(n.moves); k += 2 {
+	// 		v := v2[n.moves[k+1]]
+	// 		moves[v.config.Addr().String()] = true
+	// 	}
+
+	// 	b := baseline[i]
+	// 	block := v2[j].block
+
+	// 	unknowns := map[string]bool{}
+
+	// 	for k, v := range block.attributes {
+	// 		refs, _ := lang.ReferencesInExpr(v.Expr)
+
+	// 		for _, r := range refs {
+	// 			var key string
+	// 			switch ref := r.Subject.(type) {
+	// 			case addrs.Resource:
+	// 				key = ref.Instance(addrs.NoKey).String()
+	// 			case addrs.ResourceInstance:
+	// 				key = ref.Resource.String()
+	// 			}
+
+	// 			if !moves[key] {
+	// 				unknowns[k] = true
+	// 				break
+	// 			}
+	// 		}
+	// 	}
+
+	// 	d := 0
+	// 	b2 := b.AsValueMap()
+	// 	ctx := getContext(n)
+	// 	nk := getNodeKey(n.previous)
+
+	// 	var cache map[string]int
+	// 	if m, ok := getBestCaseDistCache[nk]; ok {
+	// 		if mi, ok := m[i]; ok {
+	// 			if mj, ok := mi[j]; ok {
+	// 				cache = mj
+	// 			}
+	// 		}
+	// 	}
+
+	// 	k := getNodeKey(n)
+	// 	m := getBestCaseDistCache[k]
+	// 	if m == nil {
+	// 		m = map[int]map[int]map[string]int{}
+	// 		getBestCaseDistCache[k] = m
+	// 	}
+	// 	mi := m[i]
+	// 	if mi == nil {
+	// 		mi = map[int]map[string]int{}
+	// 		m[i] = mi
+	// 	}
+	// 	mj := mi[j]
+	// 	if mj == nil {
+	// 		mj = map[string]int{}
+	// 		mi[j] = mj
+	// 	}
+	// 	myCache := mj
+
+	// 	seen := map[string]bool{}
+	// 	for k, v := range block.attributes {
+	// 		seen[k] = true
+	// 		if !unknowns[k] {
+	// 			if cache != nil {
+	// 				if cd, ok := cache[k]; ok {
+	// 					d += cd
+	// 					myCache[k] = cd
+	// 					continue
+	// 				}
+	// 			}
+	// 			val, _ := v.Expr.Value(ctx)
+	// 			cd := dist(b2[k], val)
+	// 			myCache[k] = cd
+	// 			d += cd
+	// 		}
+	// 	}
+	// 	// for k, v := range b2 {
+	// 	// 	if !seen[k] && k != "module_name" {
+	// 	// 		d += ord(v)
+	// 	// 	}
+	// 	// }
+
+	// 	// d += levenshteinDistance(v1[i].block.moduleName, v2[j].block.moduleName)
+
+	// 	return d
+	// }
+
+	bases := make([]int, len(v1))
+	id := 0
+	for i, x := range baseline {
+		bases[i] = ord(x)
+		id += bases[i]
+	}
+
+	// getBestCaseDistAll := func(n *searchNode) int {
+	// 	pq := PriorityQueue[[]int]{}
+
+	// 	for _, j := range n.openNew {
+	// 		for _, i := range pairs[j] {
+	// 			if n.closedOld[i] {
+	// 				continue
+	// 			}
+
+	// 			// d := getBestCaseDist(n, i, j)
+	// 			d := bestcaseDists[i][j]
+	// 			pq.Insert([]int{i, j}, d)
+	// 		}
+	// 	}
+
+	// 	td := 0
+	// 	seen1 := map[int]bool{}
+	// 	seen2 := map[int]bool{}
+	// 	for len(pq) > 0 {
+	// 		x, d := pq.Extract()
+	// 		if seen1[x[0]] || seen2[x[1]] {
+	// 			continue
+	// 		}
+	// 		seen1[x[0]] = true
+	// 		seen2[x[1]] = true
+	// 		td += d
+	// 	}
+	// 	for _, j := range n.openNew {
+	// 		if !seen2[j] {
+	// 			td += getPartialDist(n, -1, j)
+	// 		}
+	// 	}
+	// 	return td
+	// }
+
+	// names := map[string]bool{}
+	// for _, v := range v2 {
+	// 	names[v.config.Addr().String()] = true
+	// }
+
+	// isDepsSatisfied := func(n *searchNode, j int) bool {
+	// 	moves := map[string]bool{}
+	// 	for k := 0; k < len(n.moves); k += 2 {
+	// 		v := v2[n.moves[k+1]]
+	// 		moves[v.config.Addr().String()] = true
+	// 	}
+	// 	v := v2[j]
+	// 	for _, d := range v.block.dependencies {
+	// 		if names[d] && !moves[d] {
+	// 			return false
+	// 		}
+	// 	}
+	// 	return true
+	// }
+
+	enumeratePairs := func(n *searchNode) []int {
+		p := make([]int, 0)
+		closedOld := map[int]bool{}
+		moves := getMoves(n)
+		closedNew := map[int]bool{}
+		for k := 0; k < len(moves); k += 2 {
+			i := moves[k]
+			j := moves[k+1]
+			closedOld[i] = true
+			closedNew[j] = true
+		}
+
+		for j := range v2 {
+			if closedNew[j] {
+				continue
+			}
+			for _, i := range pairs[j] {
+				if closedOld[i] {
+					continue
+				}
+
+				d := getPartialDist(n, i, j)
+				ln, rn := v1[i].config.Name, v2[j].config.Name
+				log.Printf("[TRACE] distance [%v]: %s, %s, %v\n", j, ln, rn, d)
+
+				// Perfect match
+				if d == 0 && ln == rn {
+					return []int{i, j, d}
+				}
+
+				p = append(p, i, j, d)
+			}
+
+			d := getPartialDist(n, -1, j)
+			p = append(p, -1, j, d) // Empty pair
+			log.Printf("[TRACE] distance [%v]: [none] %s, %v\n", j, v2[j].config.Name, d)
+		}
+
+		return p
+	}
+
+	pq := PriorityQueue[searchNode]{}
+	node := searchNode{
+		pos:         0,
+		state:       &myData,
+		score:       id,
+		currentMove: nil,
+	}
+
+	var tt int64
+	var tt2 int64
+	var lc int
+	pq.Insert(node, id)
+	for len(pq) > 0 {
+		lc += 1
+		n, _ := pq.Extract()
+		s := n.score
+		if n.pos == len(v2) {
+			result := MovesResult{Score: s, Moves: make([]moveOp, 0)}
+			moves := getMoves(&n)
+			for k := 0; k < len(moves); k += 2 {
+				u := v1[moves[k]]
+				v := v2[moves[k+1]]
+				if u.config.Name != v.config.Name {
+					result.Moves = append(result.Moves, moveOp{
+						From: resourceAddress{Type: u.config.Type, Name: u.config.Name},
+						To:   resourceAddress{Type: v.config.Type, Name: v.config.Name},
+					})
+				}
+			}
+
+			return result
+		}
+
+		if lc%10 == 0 {
+			log.Printf("[INFO] <sample> remaining: %v; pq size: %v; score: %v; loops: %v; enumeration: %vns; copy %vns", len(v2)-n.pos, len(pq), n.score, lc, tt2, tt)
+			tt2 = 0
+			tt = 0
+		}
+
+		st2 := time.Now()
+		p := enumeratePairs(&n)
+		tt2 += time.Now().UnixNano() - st2.UnixNano()
+
+		for k := 0; k < len(p); k += 3 {
+			i, j, c := p[k], p[k+1], p[k+2]
+
+			var y int
+			if i != -1 {
+				y = bases[i]
+			}
+			ns := s + c - y
+			// fmt.Printf("loop: %v, %v, %v\n", n.pos, i, c)
+			st := time.Now()
+			nn := searchNode{
+				pos:         n.pos + 1,
+				state:       n.state,
+				score:       ns,
+				previous:    &n,
+				currentMove: []int{i, j},
+			}
+
+			vs := getDist(&nn, i, j)
+			tt += time.Now().UnixNano() - st.UnixNano()
+
+			if vs != -1 && nn.score >= vs {
+				log.Printf("[DEBUG] skipped higher cost node %s", nn.key)
+				continue
+			}
+
+			//h := getBestCaseDistAll(&nn)
+
+			setDist(&nn, i, j, nn.score)
+			pq.Insert(nn, nn.score)
+		}
+	}
+
+	return MovesResult{}
+}
+
+func (a *Allocator) Resolve(ctx EvalContext, c *configs.Resource) (*ResolveResult, tfdiags.Diagnostics) {
+	var diags tfdiags.Diagnostics
+
+	providerAddr := a.Config.ResolveAbsProviderAddr(c.ProviderConfigAddr(), addrs.RootModule)
 	p, err := a.getProvider(ctx, providerAddr)
 	if err != nil {
 		return nil, diags.Append(err)
 	}
 
+	addr := c.Addr()
 	schema, version, schemaDiags := a.GetSchema(ctx, addr, providerAddr)
 	diags.Append(schemaDiags)
 	if diags.HasErrors() {
@@ -160,6 +1135,38 @@ func (a *Allocator) Apply(ctx EvalContext, addr addrs.Resource, c *configs.Resou
 	if configDiags.HasErrors() {
 		return nil, diags
 	}
+
+	return &ResolveResult{
+		Provider:      p,
+		Config:        configVal,
+		Schema:        schema,
+		SchemaVersion: version,
+		ProviderAddr:  providerAddr,
+	}, nil
+}
+
+type ApplyResult struct {
+	State         *states.ResourceInstanceObject
+	Schema        *configschema.Block
+	SchemaVersion uint64
+}
+
+func (a *Allocator) Apply(ctx EvalContext, c *configs.Resource) (*ApplyResult, tfdiags.Diagnostics) {
+	var diags tfdiags.Diagnostics
+
+	addr := c.Addr()
+	log.Printf("[INFO] Starting apply for %s", addr)
+
+	resolved, resolveDiags := a.Resolve(ctx, c)
+	if resolveDiags.HasErrors() {
+		return nil, diags
+	}
+
+	p := resolved.Provider
+	configVal := resolved.Config
+	schema := resolved.Schema
+	version := resolved.SchemaVersion
+	providerAddr := resolved.ProviderAddr
 
 	if !configVal.IsWhollyKnown() {
 		// We don't have a pretty format function for a path, but since this is
@@ -178,7 +1185,7 @@ func (a *Allocator) Apply(ctx EvalContext, addr addrs.Resource, c *configs.Resou
 			"Configuration contains unknown value",
 			fmt.Sprintf("configuration for %s still contains unknown values during apply (this is a bug in Terraform; please report it!)\n"+
 				"The following paths in the resource configuration are unknown:\n%s",
-				rConfigAddr,
+				c,
 				strings.Join(unknownPaths, "\n"),
 			),
 		))

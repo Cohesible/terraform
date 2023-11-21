@@ -219,6 +219,10 @@ func (c *StartSessionCommand) handleInput(be backend.Enhanced, args *arguments.S
 
 	// Run the operation
 	op, err := c.RunOperation(be, opReq)
+	if opReq.StateManager != nil {
+		c.StateManager = opReq.StateManager
+	}
+
 	if err != nil {
 		return diags.Append(err)
 	}
@@ -229,10 +233,6 @@ func (c *StartSessionCommand) handleInput(be backend.Enhanced, args *arguments.S
 
 	if opReq.ProviderCache != nil {
 		c.ProviderCache = opReq.ProviderCache
-	}
-
-	if opReq.StateManager != nil {
-		c.StateManager = opReq.StateManager
 	}
 
 	// Render the resource count and outputs, unless those counts are being
@@ -299,6 +299,34 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 			}
 
 			view.PrintData(json.RawMessage(buf.Bytes()))
+		case "find-moves":
+			if c.StateManager == nil {
+				sm, _ := be.StateMgr(backend.DefaultStateName)
+				err := sm.RefreshState()
+				if err != nil {
+					view.Diagnostics(tfdiags.Diagnostics{}.Append(err))
+					continue
+				}
+				c.StateManager = sm
+			}
+
+			config, d := c.loadConfig(".")
+			if d.HasErrors() {
+				view.Diagnostics(d)
+				continue
+			}
+
+			config2, d := c.loadConfig(parts[1])
+			if d.HasErrors() {
+				view.Diagnostics(d)
+				continue
+			}
+
+			s := c.StateManager.State()
+			moves := terraform.FindMoves(s, config2, config)
+
+			b, _ := json.Marshal(moves)
+			view.PrintData(b)
 		case "apply-config":
 			rAddr, d := addrs.ParseAbsResourceStr(parts[1])
 			if d.HasErrors() {
@@ -323,7 +351,7 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 			a := terraform.GetAllocator(config)
 			ctx := walker.EvalContext().WithPath(addrs.RootModuleInstance)
 			rConfig := config.Module.ResourceByAddr(rAddr.Resource)
-			result, d := a.Apply(ctx, rAddr.Resource, rConfig)
+			result, d := a.Apply(ctx, rConfig)
 			if d.HasErrors() {
 				view.Diagnostics(d)
 				continue
@@ -338,9 +366,6 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 			s.RootModule().SetResourceInstanceCurrent(rAddr.Resource.Instance(addrs.NoKey), encoded, providerAddr)
 			sm.WriteState(s)
 			sm.RefreshState()
-
-			// Dump the config cache
-			c.configLoader = nil
 		case "get-refs":
 			rAddr, d := addrs.ParseAbsResourceStr(parts[1])
 			if d.HasErrors() {
@@ -375,6 +400,9 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 				view.Diagnostics(tfdiags.Diagnostics{}.Append(err))
 				continue
 			}
+		case "schema":
+			cmd := ProvidersSchemaCommand{Meta: c.Meta}
+			cmd.Run([]string{"-json"})
 		case "exit":
 			return 0
 		}
