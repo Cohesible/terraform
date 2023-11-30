@@ -159,8 +159,8 @@ func getProviderSchema() providers.Schema {
 	return providers.Schema{
 		Block: &configschema.Block{
 			Attributes: map[string]*configschema.Attribute{
-				"endpoint":         {Type: cty.String, Required: true},
-				"workingDirectory": {Type: cty.String, Required: true},
+				"endpoint":         {Type: cty.String},
+				"workingDirectory": {Type: cty.String},
 				"outputDirectory":  {Type: cty.String, Required: true},
 				"buildDirectory":   {Type: cty.String, Required: true},
 			},

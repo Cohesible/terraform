@@ -93,6 +93,8 @@ type Context struct {
 	runCond             *sync.Cond
 	runContext          context.Context
 	runContextCancel    context.CancelFunc
+
+	encodeCache map[string]EncodeCacheItem
 }
 
 func (c *Context) GetProviderCache() map[string]*CachedProvider {
@@ -156,6 +158,8 @@ func NewContext(opts *ContextOpts) (*Context, tfdiags.Diagnostics) {
 		parallelSem:         NewSemaphore(par),
 		providerInputConfig: make(map[string]map[string]cty.Value),
 		sh:                  sh,
+
+		encodeCache: map[string]EncodeCacheItem{},
 	}, diags
 }
 

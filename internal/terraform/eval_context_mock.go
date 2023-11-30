@@ -402,3 +402,10 @@ func (c *MockEvalContext) InstanceExpander() *instances.Expander {
 	c.InstanceExpanderCalled = true
 	return c.InstanceExpanderExpander
 }
+
+func (c *MockEvalContext) EncodeResource(addr addrs.AbsResourceInstance, obj *states.ResourceInstanceObject, ty cty.Type, schemaVersion uint64) (*states.ResourceInstanceObjectSrc, error) {
+	return nil, nil
+}
+
+func (c *MockEvalContext) SetData(addr addrs.AbsResourceInstance, obj *states.ResourceInstanceObject) {
+}

@@ -289,6 +289,12 @@ func (n *NodeAbstractResourceInstance) writeResourceInstanceStateImpl(ctx EvalCo
 		log.Printf("[TRACE] %s to %s for %s (deposed key %s)", logFuncName, targetState, absAddr, deposedKey)
 	}
 
+	if absAddr.Resource.Resource.Mode == addrs.DataResourceMode {
+		log.Printf("[TRACE] %s: storing data state %s", logFuncName, absAddr)
+		ctx.SetData(absAddr, obj)
+		return nil, nil
+	}
+
 	var state *states.SyncState
 	switch targetState {
 	case workingState:
@@ -349,10 +355,12 @@ func (n *NodeAbstractResourceInstance) writeResourceInstanceStateImpl(ctx EvalCo
 		return nil, fmt.Errorf("failed to encode %s in state: no resource type schema available", absAddr)
 	}
 
-	src, err := obj.Encode(schema.ImpliedType(), currentVersion)
+	src, err := ctx.EncodeResource(absAddr, obj, schema.ImpliedType(), currentVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode %s in state: %s", absAddr, err)
 	}
+
+	// log.Printf("[TRACE] %s: resource %s encoded state %d bytes", logFuncName, absAddr, len(src.AttrsJSON))
 
 	write(src)
 	return src, nil

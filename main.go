@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"strings"
 
 	"github.com/hashicorp/go-plugin"
@@ -195,6 +196,40 @@ func realMain() int {
 	// Get the command line args.
 	binName := filepath.Base(os.Args[0])
 	args := os.Args[1:]
+
+	for i, arg := range args {
+		if arg == "-cpu-profile" {
+			if i+1 == len(args) {
+				Ui.Error("An output filepath is required when using -cpu-profile")
+				return 1
+			}
+
+			dest := args[i+1]
+			f, err := os.Create(dest)
+			if err != nil {
+				Ui.Error(err.Error())
+				return 1
+			}
+
+			pprof.StartCPUProfile(f)
+			defer pprof.StopCPUProfile()
+
+			if len(args)-2 == 0 {
+				args = make([]string, 0)
+				break
+			}
+
+			newArgs := make([]string, len(args)-2)
+			if len(args)-2 > 0 {
+				n := copy(newArgs, args[:i])
+				copy(newArgs[n:], args[i+2:])
+			}
+
+			args = newArgs
+
+			break
+		}
+	}
 
 	originalWd, err := os.Getwd()
 	if err != nil {

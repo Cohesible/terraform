@@ -117,6 +117,7 @@ func (w *ContextGraphWalker) EvalContext() EvalContext {
 		VariableValues:        w.variableValues,
 		VariableValuesLock:    &w.variableValuesLock,
 		ProviderLocks:         w.providerLocks,
+		EncodeCache:           w.Context.encodeCache,
 	}
 
 	return ctx

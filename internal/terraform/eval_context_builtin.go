@@ -75,6 +75,8 @@ type BuiltinEvalContext struct {
 	PrevRunStateValue     *states.SyncState
 	InstanceExpanderValue *instances.Expander
 	MoveResultsValue      refactoring.MoveResults
+
+	EncodeCache map[string]EncodeCacheItem
 }
 
 // BuiltinEvalContext implements EvalContext
@@ -449,6 +451,7 @@ func (ctx *BuiltinEvalContext) EvaluationScope(self addrs.Referenceable, source 
 		ModulePath:      ctx.PathValue,
 		InstanceKeyData: keyData,
 		Operation:       ctx.Evaluator.Operation,
+		EncodeCache:     ctx.EncodeCache,
 	}
 	scope := ctx.Evaluator.Scope(data, self, source)
 
@@ -544,4 +547,27 @@ func (ctx *BuiltinEvalContext) InstanceExpander() *instances.Expander {
 
 func (ctx *BuiltinEvalContext) MoveResults() refactoring.MoveResults {
 	return ctx.MoveResultsValue
+}
+
+func (ctx *BuiltinEvalContext) EncodeResource(addr addrs.AbsResourceInstance, obj *states.ResourceInstanceObject, ty cty.Type, schemaVersion uint64) (*states.ResourceInstanceObjectSrc, error) {
+	key := addr.Resource.String()
+	if item, ok := ctx.EncodeCache[key]; ok {
+		if item.value == &obj.Value && item.src != nil {
+			log.Printf("[INFO] BuiltinEvalContext: EncodeResource cache hit %s", addr)
+			return item.src, nil
+		}
+	}
+
+	src, err := obj.Encode(ty, schemaVersion)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode %s in state: %s", addr, err)
+	}
+
+	ctx.EncodeCache[key] = EncodeCacheItem{value: &obj.Value, src: src}
+	return src, nil
+}
+
+func (ctx *BuiltinEvalContext) SetData(addr addrs.AbsResourceInstance, obj *states.ResourceInstanceObject) {
+	key := addr.Resource.String()
+	ctx.EncodeCache[key] = EncodeCacheItem{value: &obj.Value}
 }

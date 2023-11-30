@@ -85,7 +85,7 @@ func (h *StateHook) PostStateUpdate(new *states.State) (terraform.HookAction, er
 				}
 				h.intermediatePersist.LastPersist = time.Now()
 			} else {
-				log.Printf("[DEBUG] State storage %T declined to persist a state snapshot", h.StateMgr)
+				log.Printf("[DEBUG] %T: skipped persisting state", h.StateMgr)
 			}
 		}
 	}

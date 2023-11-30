@@ -204,4 +204,7 @@ type EvalContext interface {
 	// WithPath returns a copy of the context with the internal path set to the
 	// path argument.
 	WithPath(path addrs.ModuleInstance) EvalContext
+
+	EncodeResource(addr addrs.AbsResourceInstance, obj *states.ResourceInstanceObject, ty cty.Type, schemaVersion uint64) (*states.ResourceInstanceObjectSrc, error)
+	SetData(addr addrs.AbsResourceInstance, obj *states.ResourceInstanceObject)
 }

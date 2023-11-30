@@ -104,6 +104,13 @@ type evaluationStateData struct {
 	// Operation records the type of walk the evaluationStateData is being used
 	// for.
 	Operation walkOperation
+
+	EncodeCache map[string]EncodeCacheItem
+}
+
+type EncodeCacheItem struct {
+	value *cty.Value
+	src   *states.ResourceInstanceObjectSrc
 }
 
 // InstanceKeyEvalData is the old name for instances.RepetitionData, aliased
@@ -640,6 +647,13 @@ func (d *evaluationStateData) GetPathAttr(addr addrs.PathAttr, rng tfdiags.Sourc
 
 func (d *evaluationStateData) GetResource(addr addrs.Resource, rng tfdiags.SourceRange) (cty.Value, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
+
+	key := addr.String()
+	if item, ok := d.EncodeCache[key]; ok {
+		log.Printf("[INFO] evaluationStateData: GetResource cache hit %s", addr)
+		return *item.value, nil
+	}
+
 	// First we'll consult the configuration to see if an resource of this
 	// name is declared at all.
 	moduleAddr := d.ModulePath
@@ -890,6 +904,8 @@ func (d *evaluationStateData) GetResource(addr addrs.Resource, rng tfdiags.Sourc
 		if !ok {
 			// if the instance is missing, insert an unknown value
 			val = cty.UnknownVal(ty)
+		} else {
+			d.EncodeCache[key] = EncodeCacheItem{value: &ret, src: rs.Instances[addrs.NoKey].Current}
 		}
 
 		ret = val
