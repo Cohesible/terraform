@@ -105,12 +105,24 @@ type evaluationStateData struct {
 	// for.
 	Operation walkOperation
 
-	EncodeCache map[string]EncodeCacheItem
+	EncodeCache *EncodeCache
 }
 
 type EncodeCacheItem struct {
 	value *cty.Value
 	src   *states.ResourceInstanceObjectSrc
+}
+
+type EncodeCache struct {
+	Items map[string]*EncodeCacheItem
+	Locks LockMap
+}
+
+func NewEncodeCache() *EncodeCache {
+	return &EncodeCache{
+		Items: map[string]*EncodeCacheItem{},
+		Locks: NewLockMap(),
+	}
 }
 
 // InstanceKeyEvalData is the old name for instances.RepetitionData, aliased
@@ -649,7 +661,11 @@ func (d *evaluationStateData) GetResource(addr addrs.Resource, rng tfdiags.Sourc
 	var diags tfdiags.Diagnostics
 
 	key := addr.String()
-	if item, ok := d.EncodeCache[key]; ok {
+
+	d.EncodeCache.Locks.Lock(key)
+	defer d.EncodeCache.Locks.Unlock(key)
+
+	if item, ok := d.EncodeCache.Items[key]; ok {
 		log.Printf("[INFO] evaluationStateData: GetResource cache hit %s", addr)
 		return *item.value, nil
 	}
@@ -905,7 +921,9 @@ func (d *evaluationStateData) GetResource(addr addrs.Resource, rng tfdiags.Sourc
 			// if the instance is missing, insert an unknown value
 			val = cty.UnknownVal(ty)
 		} else {
-			d.EncodeCache[key] = EncodeCacheItem{value: &ret, src: rs.Instances[addrs.NoKey].Current}
+			d.EncodeCache.Locks.LockPrimary()
+			d.EncodeCache.Items[key] = &EncodeCacheItem{value: &ret, src: rs.Instances[addrs.NoKey].Current}
+			d.EncodeCache.Locks.UnlockPrimary()
 		}
 
 		ret = val

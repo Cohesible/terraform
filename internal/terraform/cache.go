@@ -138,3 +138,13 @@ func (m *LockMap) Unlock(key string) {
 	m.locks[key].Unlock()
 	m.primary.RUnlock()
 }
+
+// Used to lock everything when adding to a map
+
+func (m *LockMap) LockPrimary() {
+	m.primary.Lock()
+}
+
+func (m *LockMap) UnlockPrimary() {
+	m.primary.Unlock()
+}

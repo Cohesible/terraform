@@ -94,7 +94,7 @@ type Context struct {
 	runContext          context.Context
 	runContextCancel    context.CancelFunc
 
-	encodeCache map[string]EncodeCacheItem
+	encodeCache *EncodeCache
 }
 
 func (c *Context) GetProviderCache() map[string]*CachedProvider {
@@ -159,7 +159,7 @@ func NewContext(opts *ContextOpts) (*Context, tfdiags.Diagnostics) {
 		providerInputConfig: make(map[string]map[string]cty.Value),
 		sh:                  sh,
 
-		encodeCache: map[string]EncodeCacheItem{},
+		encodeCache: NewEncodeCache(),
 	}, diags
 }
 
