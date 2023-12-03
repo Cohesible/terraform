@@ -115,13 +115,13 @@ type EncodeCacheItem struct {
 
 type EncodeCache struct {
 	Items map[string]*EncodeCacheItem
-	Locks LockMap
+	Lock  sync.RWMutex
 }
 
 func NewEncodeCache() *EncodeCache {
 	return &EncodeCache{
 		Items: map[string]*EncodeCacheItem{},
-		Locks: NewLockMap(),
+		Lock:  sync.RWMutex{},
 	}
 }
 
@@ -662,13 +662,13 @@ func (d *evaluationStateData) GetResource(addr addrs.Resource, rng tfdiags.Sourc
 
 	key := addr.String()
 
-	d.EncodeCache.Locks.Lock(key)
-	defer d.EncodeCache.Locks.Unlock(key)
-
+	d.EncodeCache.Lock.RLock()
 	if item, ok := d.EncodeCache.Items[key]; ok {
+		d.EncodeCache.Lock.RUnlock()
 		log.Printf("[INFO] evaluationStateData: GetResource cache hit %s", addr)
 		return *item.value, nil
 	}
+	d.EncodeCache.Lock.RUnlock()
 
 	// First we'll consult the configuration to see if an resource of this
 	// name is declared at all.
@@ -921,9 +921,9 @@ func (d *evaluationStateData) GetResource(addr addrs.Resource, rng tfdiags.Sourc
 			// if the instance is missing, insert an unknown value
 			val = cty.UnknownVal(ty)
 		} else {
-			d.EncodeCache.Locks.LockPrimary()
+			d.EncodeCache.Lock.Lock()
 			d.EncodeCache.Items[key] = &EncodeCacheItem{value: &ret, src: rs.Instances[addrs.NoKey].Current}
-			d.EncodeCache.Locks.UnlockPrimary()
+			d.EncodeCache.Lock.Unlock()
 		}
 
 		ret = val

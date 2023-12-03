@@ -552,16 +552,16 @@ func (ctx *BuiltinEvalContext) MoveResults() refactoring.MoveResults {
 func (ctx *BuiltinEvalContext) EncodeResource(addr addrs.AbsResourceInstance, obj *states.ResourceInstanceObject, ty cty.Type, schemaVersion uint64) (*states.ResourceInstanceObjectSrc, error) {
 	key := addr.Resource.String()
 
-	ctx.EncodeCache.Locks.Lock(key)
-	defer ctx.EncodeCache.Locks.Unlock(key)
-
+	ctx.EncodeCache.Lock.RLock()
 	var item *EncodeCacheItem
 	if item, ok := ctx.EncodeCache.Items[key]; ok {
 		if item.value == &obj.Value && item.src != nil {
+			ctx.EncodeCache.Lock.RUnlock()
 			log.Printf("[INFO] BuiltinEvalContext: EncodeResource cache hit %s", addr)
 			return item.src, nil
 		}
 	}
+	ctx.EncodeCache.Lock.RUnlock()
 
 	src, err := obj.Encode(ty, schemaVersion)
 	if err != nil {
@@ -572,9 +572,9 @@ func (ctx *BuiltinEvalContext) EncodeResource(addr addrs.AbsResourceInstance, ob
 		item.value = &obj.Value
 		item.src = src
 	} else {
-		ctx.EncodeCache.Locks.LockPrimary()
+		ctx.EncodeCache.Lock.Lock()
 		ctx.EncodeCache.Items[key] = &EncodeCacheItem{value: &obj.Value, src: src}
-		ctx.EncodeCache.Locks.UnlockPrimary()
+		ctx.EncodeCache.Lock.Unlock()
 	}
 
 	return src, nil
@@ -583,7 +583,8 @@ func (ctx *BuiltinEvalContext) EncodeResource(addr addrs.AbsResourceInstance, ob
 func (ctx *BuiltinEvalContext) SetData(addr addrs.AbsResourceInstance, obj *states.ResourceInstanceObject) {
 	key := addr.Resource.String()
 
-	ctx.EncodeCache.Locks.LockPrimary()
+	// FIXME: use https://pkg.go.dev/sync#Map instead
+	ctx.EncodeCache.Lock.Lock()
 	ctx.EncodeCache.Items[key] = &EncodeCacheItem{value: &obj.Value}
-	ctx.EncodeCache.Locks.UnlockPrimary()
+	ctx.EncodeCache.Lock.Unlock()
 }
