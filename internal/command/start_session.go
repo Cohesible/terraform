@@ -198,7 +198,7 @@ func (c *StartSessionCommand) handleInput(be backend.Enhanced, args *arguments.S
 
 	isDestroy := applyArgs.Operation.PlanMode == plans.DestroyMode
 	// TODO: if destroy _and_ `useTests` then we should only destroy test resources
-	if len(opReq.Targets) == 0 && !isDestroy && (c.Meta.useTests || len(c.modules) > 0) {
+	if len(opReq.Targets) == 0 && !isDestroy {
 		targets, targetsDiags := c.Meta.loadTargets(".")
 		diags = diags.Append(targetsDiags)
 		opReq.Targets = targets
