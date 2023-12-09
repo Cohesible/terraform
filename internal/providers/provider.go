@@ -187,6 +187,10 @@ type ReadResourceRequest struct {
 	// TypeName is the name of the resource type being read.
 	TypeName string
 
+	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
+	ResourceName string
+	Dependencies []string // `${type}.${name}` or `data.${type}.${name}`
+
 	// PriorState contains the previously saved state value for this resource.
 	PriorState cty.Value
 
@@ -271,6 +275,10 @@ type PlanResourceChangeResponse struct {
 type ApplyResourceChangeRequest struct {
 	// TypeName is the name of the resource type being applied.
 	TypeName string
+
+	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
+	ResourceName string
+	Dependencies []string // `${type}.${name}` or `data.${type}.${name}`
 
 	// PriorState is the current state of resource.
 	PriorState cty.Value
@@ -376,6 +384,10 @@ func (ir ImportedResource) AsInstanceObject() *states.ResourceInstanceObject {
 type ReadDataSourceRequest struct {
 	// TypeName is the name of the data source type to Read.
 	TypeName string
+
+	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
+	ResourceName string
+	Dependencies []string // `${type}.${name}` or `data.${type}.${name}`
 
 	// Config is the complete configuration for the requested data source.
 	Config cty.Value

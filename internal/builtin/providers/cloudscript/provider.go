@@ -65,6 +65,8 @@ func (p *CloudScriptProvider) ReadDataSource(req providers.ReadDataSourceRequest
 
 	clientReq := ClientRequest{
 		TypeName:     req.Config.GetAttr("type").AsString(),
+		ResourceName: req.ResourceName,
+		Dependencies: req.Dependencies,
 		Operation:    "data",
 		PlannedState: planned,
 	}
@@ -99,10 +101,12 @@ func (p *CloudScriptProvider) ReadResource(req providers.ReadResourceRequest) (r
 	}
 
 	clientReq := ClientRequest{
-		TypeName:   req.PriorState.GetAttr("type").AsString(),
-		Operation:  "read",
-		PriorInput: priorInput,
-		PriorState: priorOutput,
+		TypeName:     req.PriorState.GetAttr("type").AsString(),
+		ResourceName: req.ResourceName,
+		Dependencies: req.Dependencies,
+		Operation:    "read",
+		PriorInput:   priorInput,
+		PriorState:   priorOutput,
 	}
 
 	val, err := p.sendRequest(clientReq)
@@ -280,10 +284,14 @@ type ProviderConfig struct {
 	WorkingDirectory string `json:"workingDirectory"`
 	OutputDirectory  string `json:"outputDirectory"`
 	BuildDirectory   string `json:"buildDirectory"`
+	// 	programId   string `json:"programId"` // env var ?
+	// 	processId   string `json:"processId"` // env var ?
 }
 
 type ClientRequest struct {
 	TypeName       string          `json:"type"`
+	ResourceName   string          `json:"resourceName"`
+	Dependencies   []string        `json:"dependencies"`
 	Operation      string          `json:"operation"`
 	PriorInput     json.RawMessage `json:"priorInput,omitempty"`
 	PriorState     json.RawMessage `json:"priorState,omitempty"`
@@ -344,6 +352,8 @@ func (p *CloudScriptProvider) ApplyResourceChange(req providers.ApplyResourceCha
 
 	clientReq := ClientRequest{
 		TypeName:     resourceType,
+		ResourceName: req.ResourceName,
+		Dependencies: req.Dependencies,
 		Operation:    op,
 		PriorInput:   input,
 		PriorState:   output,

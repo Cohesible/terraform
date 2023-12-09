@@ -590,6 +590,11 @@ func (n *NodeAbstractResourceInstance) refresh(ctx EvalContext, deposedKey state
 		ProviderMeta: metaConfigVal,
 	}
 
+	if n.ResolvedProvider.Provider.Type == "cloudscript" {
+		providerReq.ResourceName = n.Addr.Resource.Resource.Name
+		providerReq.Dependencies = n.getCloudScriptResourceDeps()
+	}
+
 	resp := provider.ReadResource(providerReq)
 	if n.Config != nil {
 		resp.Diagnostics = resp.Diagnostics.InConfigBody(n.Config.Config, n.Addr.String())
@@ -1423,6 +1428,16 @@ func processIgnoreChangesIndividual(prior, config cty.Value, ignoreChangesPath [
 	return ret, nil
 }
 
+func (n *NodeAbstractResourceInstance) getCloudScriptResourceDeps() []string {
+	deps := make([]string, 0)
+	for _, d := range n.Dependencies {
+		if d.Resource.Mode == addrs.ManagedResourceMode && d.Resource.Type == "cloudscript_resource" {
+			deps = append(deps, d.Resource.Name)
+		}
+	}
+	return deps
+}
+
 // readDataSource handles everything needed to call ReadDataSource on the provider.
 // A previously evaluated configVal can be passed in, or a new one is generated
 // from the resource configuration.
@@ -1489,11 +1504,18 @@ func (n *NodeAbstractResourceInstance) readDataSource(ctx EvalContext, configVal
 		return newVal, diags
 	}
 
-	resp := provider.ReadDataSource(providers.ReadDataSourceRequest{
+	req := providers.ReadDataSourceRequest{
 		TypeName:     n.Addr.ContainingResource().Resource.Type,
 		Config:       configVal,
 		ProviderMeta: metaConfigVal,
-	})
+	}
+
+	if n.ResolvedProvider.Provider.Type == "cloudscript" {
+		req.ResourceName = n.Addr.Resource.Resource.Name
+		req.Dependencies = n.getCloudScriptResourceDeps()
+	}
+
+	resp := provider.ReadDataSource(req)
 	diags = diags.Append(resp.Diagnostics.InConfigBody(config.Config, n.Addr.String()))
 	if diags.HasErrors() {
 		return newVal, diags
@@ -2333,14 +2355,21 @@ func (n *NodeAbstractResourceInstance) apply(
 		return newState, diags
 	}
 
-	resp := provider.ApplyResourceChange(providers.ApplyResourceChangeRequest{
+	req := providers.ApplyResourceChangeRequest{
 		TypeName:       n.Addr.Resource.Resource.Type,
 		PriorState:     unmarkedBefore,
 		Config:         unmarkedConfigVal,
 		PlannedState:   unmarkedAfter,
 		PlannedPrivate: change.Private,
 		ProviderMeta:   metaConfigVal,
-	})
+	}
+
+	if n.ResolvedProvider.Provider.Type == "cloudscript" {
+		req.ResourceName = n.Addr.Resource.Resource.Name
+		req.Dependencies = n.getCloudScriptResourceDeps()
+	}
+
+	resp := provider.ApplyResourceChange(req)
 	applyDiags := resp.Diagnostics
 	if applyConfig != nil {
 		applyDiags = applyDiags.InConfigBody(applyConfig.Config, n.Addr.String())
