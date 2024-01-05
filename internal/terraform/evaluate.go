@@ -922,7 +922,7 @@ func (d *evaluationStateData) GetResource(addr addrs.Resource, rng tfdiags.Sourc
 			val = cty.UnknownVal(ty)
 		} else {
 			d.EncodeCache.Lock.Lock()
-			d.EncodeCache.Items[key] = &EncodeCacheItem{value: &ret, src: rs.Instances[addrs.NoKey].Current}
+			d.EncodeCache.Items[key] = &EncodeCacheItem{value: &val, src: rs.Instances[addrs.NoKey].Current}
 			d.EncodeCache.Lock.Unlock()
 		}
 
