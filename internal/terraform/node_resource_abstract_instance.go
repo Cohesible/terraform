@@ -1579,7 +1579,7 @@ func (n *NodeAbstractResourceInstance) readDataSource(ctx EvalContext, configVal
 		return h.PostApply(n.Addr, states.CurrentGen, newVal, diags.Err(), nil)
 	}))
 
-	if n.cache != nil {
+	if n.cache != nil && !diags.HasErrors() {
 		n.cache.SetCachedValue(n.Addr.ConfigResource(), &newVal)
 	}
 

@@ -38,7 +38,7 @@ func (client ExampleClient) sendRequest(path string, data []byte) ([]byte, error
 
 	var contentLength int64
 	if resp.ContentLength == -1 {
-		contentLength = 10000000
+		contentLength = 10000000 // FIXME
 	} else {
 		contentLength = resp.ContentLength
 	}
