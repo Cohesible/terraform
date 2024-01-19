@@ -302,6 +302,9 @@ func (n *NodeApplyableResourceInstance) managedResourceExecute(ctx EvalContext) 
 	// If there is no change, there was nothing to apply, and we don't need to
 	// re-write the state, but we do need to re-evaluate postconditions.
 	if diffApply.Action == plans.NoOp {
+		// We previously cached the encoded "plan" state which we must now clear explictly
+		ctx.ClearCachedResource(n.Addr)
+
 		return diags.Append(n.managedResourcePostconditions(ctx, repeatData))
 	}
 

@@ -409,3 +409,6 @@ func (c *MockEvalContext) EncodeResource(addr addrs.AbsResourceInstance, obj *st
 
 func (c *MockEvalContext) SetData(addr addrs.AbsResourceInstance, obj *states.ResourceInstanceObject) {
 }
+
+func (c *MockEvalContext) ClearCachedResource(addr addrs.AbsResourceInstance) {
+}

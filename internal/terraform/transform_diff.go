@@ -128,7 +128,7 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 		}
 
 		createHookNode := func(action string, target *NodeAbstractResourceInstance) ([]*graphNodeLifeCycleHook, hcl.Diagnostics) {
-			// FIXME: this is not robust
+			// TODO: FIXME: this is not robust and crashes when using "alias"
 			providerConfig := t.Config.Module.ProviderConfigs["cloudscript"]
 			providerAddr := t.Config.ResolveAbsProviderAddr(
 				addrs.NewDefaultLocalProviderConfig("cloudscript"),

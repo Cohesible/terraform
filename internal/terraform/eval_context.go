@@ -207,4 +207,5 @@ type EvalContext interface {
 
 	EncodeResource(addr addrs.AbsResourceInstance, obj *states.ResourceInstanceObject, ty cty.Type, schemaVersion uint64) (*states.ResourceInstanceObjectSrc, error)
 	SetData(addr addrs.AbsResourceInstance, obj *states.ResourceInstanceObject)
+	ClearCachedResource(addr addrs.AbsResourceInstance)
 }

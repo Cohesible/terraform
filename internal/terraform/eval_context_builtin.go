@@ -588,3 +588,11 @@ func (ctx *BuiltinEvalContext) SetData(addr addrs.AbsResourceInstance, obj *stat
 	ctx.EncodeCache.Items[key] = &EncodeCacheItem{value: &obj.Value}
 	ctx.EncodeCache.Lock.Unlock()
 }
+
+func (ctx *BuiltinEvalContext) ClearCachedResource(addr addrs.AbsResourceInstance) {
+	key := addr.Resource.String()
+
+	ctx.EncodeCache.Lock.Lock()
+	delete(ctx.EncodeCache.Items, key)
+	ctx.EncodeCache.Lock.Unlock()
+}
