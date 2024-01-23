@@ -21,15 +21,13 @@ type VersionCommand struct {
 
 	Version           string
 	VersionPrerelease string
-	CheckFunc         VersionCheckFunc
 	Platform          getproviders.Platform
 }
 
 type VersionOutput struct {
-	Version            string            `json:"terraform_version"`
+	Version            string            `json:"version"`
 	Platform           string            `json:"platform"`
 	ProviderSelections map[string]string `json:"provider_selections"`
-	Outdated           bool              `json:"terraform_outdated"`
 }
 
 // VersionCheckFunc is the callback called by the Version command to
@@ -59,8 +57,6 @@ Options:
 }
 
 func (c *VersionCommand) Run(args []string) int {
-	var outdated bool
-	var latest string
 	var versionString bytes.Buffer
 	args = c.Meta.process(args)
 	var jsonOutput bool
@@ -78,7 +74,7 @@ func (c *VersionCommand) Run(args []string) int {
 		return 1
 	}
 
-	fmt.Fprintf(&versionString, "Terraform v%s", c.Version)
+	fmt.Fprintf(&versionString, "CloudScript-Terraform v%s", c.Version)
 	if c.VersionPrerelease != "" {
 		fmt.Fprintf(&versionString, "-%s", c.VersionPrerelease)
 	}
@@ -105,21 +101,6 @@ func (c *VersionCommand) Run(args []string) int {
 		}
 	}
 
-	// If we have a version check function, then let's check for
-	// the latest version as well.
-	if c.CheckFunc != nil {
-		// Check the latest version
-		info, err := c.CheckFunc()
-		if err != nil && !jsonOutput {
-			c.Ui.Error(fmt.Sprintf(
-				"\nError checking latest version: %s", err))
-		}
-		if info.Outdated {
-			outdated = true
-			latest = info.Latest
-		}
-	}
-
 	if jsonOutput {
 		selectionsOutput := make(map[string]string)
 		for providerAddr, lock := range providerLocks {
@@ -138,7 +119,6 @@ func (c *VersionCommand) Run(args []string) int {
 			Version:            versionOutput,
 			Platform:           c.Platform.String(),
 			ProviderSelections: selectionsOutput,
-			Outdated:           outdated,
 		}
 
 		jsonOutput, err := json.MarshalIndent(output, "", "  ")
@@ -158,13 +138,6 @@ func (c *VersionCommand) Run(args []string) int {
 				c.Ui.Output(str)
 			}
 		}
-		if outdated {
-			c.Ui.Output(fmt.Sprintf(
-				"\nYour version of Terraform is out of date! The latest version\n"+
-					"is %s. You can update by downloading from https://www.terraform.io/downloads.html",
-				latest))
-		}
-
 	}
 
 	return 0
