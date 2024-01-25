@@ -4,6 +4,8 @@
 package marks
 
 import (
+	"time"
+
 	"github.com/zclconf/go-cty/cty"
 )
 
@@ -43,3 +45,22 @@ const Sensitive = valueMark("Sensitive")
 // another value's type. This is part of the implementation of the console-only
 // `type` function.
 const TypeType = valueMark("TypeType")
+
+type DataPointer struct {
+	Path  cty.Path
+	Value string
+}
+
+type DataPointerAnnotation struct {
+	Value     string
+	Source    string
+	Timestamp time.Time
+}
+
+func NewPointerAnnotation(value, source string) DataPointerAnnotation {
+	return DataPointerAnnotation{
+		Value:     value,
+		Source:    source,
+		Timestamp: time.Now(), // Is this needed?
+	}
+}

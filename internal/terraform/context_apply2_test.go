@@ -419,7 +419,7 @@ resource "test_resource" "b" {
 			mustResourceInstanceAddr(`test_resource.a`),
 			&states.ResourceInstanceObjectSrc{
 				AttrsJSON: []byte(`{"id":"a","sensitive_attr":["secret"]}`),
-				AttrSensitivePaths: []cty.PathValueMarks{
+				AttrMarks: []cty.PathValueMarks{
 					{
 						Path:  cty.GetAttrPath("sensitive_attr"),
 						Marks: cty.NewValueMarks(marks.Sensitive),
@@ -486,8 +486,8 @@ output "out" {
 	}
 
 	obj := state.ResourceInstance(mustResourceInstanceAddr("test_object.a"))
-	if len(obj.Current.AttrSensitivePaths) != 1 {
-		t.Fatalf("Expected 1 sensitive mark for test_object.a, got %#v\n", obj.Current.AttrSensitivePaths)
+	if len(obj.Current.AttrMarks) != 1 {
+		t.Fatalf("Expected 1 sensitive mark for test_object.a, got %#v\n", obj.Current.AttrMarks)
 	}
 
 	plan, diags = ctx.Plan(m, state, DefaultPlanOpts)

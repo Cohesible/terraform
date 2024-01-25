@@ -8,7 +8,10 @@ import (
 
 	"github.com/hashicorp/terraform/internal/configs/configschema"
 	"github.com/hashicorp/terraform/internal/httpclient"
+	"github.com/hashicorp/terraform/internal/lang/marks"
 	"github.com/hashicorp/terraform/internal/providers"
+	"github.com/hashicorp/terraform/internal/states"
+	"github.com/hashicorp/terraform/internal/states/statefile"
 
 	"github.com/zclconf/go-cty/cty"
 	ctyjson "github.com/zclconf/go-cty/cty/json"
@@ -27,7 +30,12 @@ func (*CloudScriptProvider) ImportResourceState(providers.ImportResourceStateReq
 	return resp
 }
 
-func (p *CloudScriptProvider) sendRequest(req ClientRequest) (cty.Value, error) {
+type ClientResponse struct {
+	State    json.RawMessage `json:"state"`
+	Pointers json.RawMessage `json:"pointers,omitempty"`
+}
+
+func (p *CloudScriptProvider) sendRequest(req ClientRequest) (cty.Value, []cty.PathValueMarks, error) {
 	req.ProviderConfig = ProviderConfig{
 		BuildDirectory:   p.client.BuildDirectory,
 		OutputDirectory:  p.client.OutputDirectory,
@@ -36,22 +44,66 @@ func (p *CloudScriptProvider) sendRequest(req ClientRequest) (cty.Value, error) 
 
 	serialized, err := json.Marshal(req)
 	if err != nil {
-		return cty.NilVal, err
+		return cty.NilVal, nil, err
 	}
 
 	data, err := p.client.sendRequest("/handle", serialized)
 	if err != nil {
-		return cty.NilVal, err
+		return cty.NilVal, nil, err
+	}
+
+	var resp ClientResponse
+	err = json.Unmarshal(data, &resp)
+	if err != nil {
+		return cty.NilVal, nil, err
 	}
 
 	// TODO: https://pkg.go.dev/github.com/go-json-experiment/json#UnmarshalerV2
-	jsonVal := ctyjson.SimpleJSONValue{}
-	err = jsonVal.UnmarshalJSON(data)
+	stateVal := ctyjson.SimpleJSONValue{}
+	err = stateVal.UnmarshalJSON(resp.State)
 	if err != nil {
-		return cty.NilVal, err
+		return cty.NilVal, nil, err
 	}
 
-	return jsonVal.Value, nil
+	if resp.Pointers != nil {
+		val := ctyjson.SimpleJSONValue{}
+		err = val.UnmarshalJSON(resp.Pointers)
+		if err != nil {
+			return cty.NilVal, nil, err
+		}
+
+		m := make([]cty.PathValueMarks, 0)
+		cty.Walk(val.Value, func(k cty.Path, v cty.Value) (bool, error) {
+			if v.Type() == cty.String {
+				vm := cty.NewValueMarks(marks.NewPointerAnnotation(v.AsString(), ""))
+				m = append(m, cty.PathValueMarks{
+					Path:  append([]cty.PathStep{cty.GetAttrPath("output")[0]}, k...),
+					Marks: vm,
+				})
+			}
+
+			return true, nil
+		})
+
+		return stateVal.Value, m, nil
+	}
+
+	return stateVal.Value, nil, nil
+}
+
+func getPointers(m []cty.PathValueMarks) (json.RawMessage, error) {
+	pointers := states.ExtractPointers(m)
+	encoded, d := statefile.MarshalPointers(pointers)
+	if d != nil {
+		return nil, d.Err()
+	}
+
+	return json.Marshal(encoded)
+}
+
+type pointers struct {
+	Prior   json.RawMessage `json:"prior,omitempty"`
+	Planned json.RawMessage `json:"planned,omitempty"`
 }
 
 // ReadDataSource implements providers.Interface.
@@ -63,15 +115,26 @@ func (p *CloudScriptProvider) ReadDataSource(req providers.ReadDataSourceRequest
 		return resp
 	}
 
+	pointers := pointers{}
+	if req.Marks != nil {
+		plannedPointers, err := getPointers(req.Marks)
+		if err != nil {
+			resp.Diagnostics = resp.Diagnostics.Append(err)
+			return resp
+		}
+		pointers.Planned = plannedPointers
+	}
+
 	clientReq := ClientRequest{
 		TypeName:     req.Config.GetAttr("type").AsString(),
 		ResourceName: req.ResourceName,
 		Dependencies: req.Dependencies,
 		Operation:    "data",
 		PlannedState: planned,
+		Pointers:     pointers,
 	}
 
-	val, err := p.sendRequest(clientReq)
+	val, marks, err := p.sendRequest(clientReq)
 	if err != nil {
 		resp.Diagnostics = resp.Diagnostics.Append(err)
 		return resp
@@ -80,6 +143,7 @@ func (p *CloudScriptProvider) ReadDataSource(req providers.ReadDataSourceRequest
 	state := req.Config.AsValueMap()
 	state["output"] = val
 	resp.State = cty.ObjectVal(state)
+	resp.Marks = marks
 
 	return resp
 }
@@ -100,6 +164,17 @@ func (p *CloudScriptProvider) ReadResource(req providers.ReadResourceRequest) (r
 		return resp
 	}
 
+	pointers := pointers{}
+
+	if req.Marks != nil {
+		priorPointers, err := getPointers(req.Marks)
+		if err != nil {
+			resp.Diagnostics = resp.Diagnostics.Append(err)
+			return resp
+		}
+		pointers.Prior = priorPointers
+	}
+
 	clientReq := ClientRequest{
 		TypeName:     req.PriorState.GetAttr("type").AsString(),
 		ResourceName: req.ResourceName,
@@ -107,9 +182,10 @@ func (p *CloudScriptProvider) ReadResource(req providers.ReadResourceRequest) (r
 		Operation:    "read",
 		PriorInput:   priorInput,
 		PriorState:   priorOutput,
+		Pointers:     pointers,
 	}
 
-	val, err := p.sendRequest(clientReq)
+	val, marks, err := p.sendRequest(clientReq)
 	if err != nil {
 		resp.Diagnostics = resp.Diagnostics.Append(err)
 		return resp
@@ -118,6 +194,7 @@ func (p *CloudScriptProvider) ReadResource(req providers.ReadResourceRequest) (r
 	state := req.PriorState.AsValueMap()
 	state["output"] = val
 	resp.NewState = cty.ObjectVal(state)
+	resp.Marks = marks
 
 	return resp
 }
@@ -293,6 +370,7 @@ type ClientRequest struct {
 	ResourceName   string          `json:"resourceName"`
 	Dependencies   []string        `json:"dependencies"`
 	Operation      string          `json:"operation"`
+	Pointers       pointers        `json:"pointers,omitempty"`
 	PriorInput     json.RawMessage `json:"priorInput,omitempty"`
 	PriorState     json.RawMessage `json:"priorState,omitempty"`
 	PlannedState   json.RawMessage `json:"plannedState"`
@@ -305,6 +383,25 @@ type ClientRequest struct {
 func (p *CloudScriptProvider) ApplyResourceChange(req providers.ApplyResourceChangeRequest) (resp providers.ApplyResourceChangeResponse) {
 	priorInput := cty.NilVal
 	priorOutput := cty.NilVal
+	pointers := pointers{}
+
+	if req.PriorMarks != nil {
+		priorPointers, err := getPointers(req.PriorMarks)
+		if err != nil {
+			resp.Diagnostics = resp.Diagnostics.Append(err)
+			return resp
+		}
+		pointers.Prior = priorPointers
+	}
+
+	if req.PlannedMarks != nil {
+		plannedPointers, err := getPointers(req.PlannedMarks)
+		if err != nil {
+			resp.Diagnostics = resp.Diagnostics.Append(err)
+			return resp
+		}
+		pointers.Planned = plannedPointers
+	}
 
 	if !req.PriorState.IsNull() {
 		priorInput = req.PriorState.GetAttr("input")
@@ -358,9 +455,10 @@ func (p *CloudScriptProvider) ApplyResourceChange(req providers.ApplyResourceCha
 		PriorInput:   input,
 		PriorState:   output,
 		PlannedState: planned,
+		Pointers:     pointers,
 	}
 
-	val, err := p.sendRequest(clientReq)
+	val, marks, err := p.sendRequest(clientReq)
 	if err != nil {
 		resp.Diagnostics = resp.Diagnostics.Append(err)
 		return resp
@@ -374,6 +472,7 @@ func (p *CloudScriptProvider) ApplyResourceChange(req providers.ApplyResourceCha
 	newState := req.PlannedState.AsValueMap()
 	newState["output"] = val
 	resp.NewState = cty.ObjectVal(newState)
+	resp.Marks = marks
 
 	return resp
 }

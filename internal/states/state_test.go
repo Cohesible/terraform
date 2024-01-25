@@ -264,7 +264,7 @@ func TestStateDeepCopy(t *testing.T) {
 			SchemaVersion: 1,
 			AttrsJSON:     []byte(`{"woozles":"confuzles"}`),
 			// Sensitive path at "woozles"
-			AttrSensitivePaths: []cty.PathValueMarks{
+			AttrMarks: []cty.PathValueMarks{
 				{
 					Path:  cty.Path{cty.GetAttrStep{Name: "woozles"}},
 					Marks: cty.NewValueMarks(marks.Sensitive),

@@ -6836,7 +6836,7 @@ resource "test_resource" "foo" {
 			&states.ResourceInstanceObjectSrc{
 				Status:    states.ObjectReady,
 				AttrsJSON: []byte(`{"id":"foo", "value":"hello", "sensitive_value":"hello"}`),
-				AttrSensitivePaths: []cty.PathValueMarks{
+				AttrMarks: []cty.PathValueMarks{
 					{Path: cty.Path{cty.GetAttrStep{Name: "value"}}, Marks: cty.NewValueMarks(marks.Sensitive)},
 					{Path: cty.Path{cty.GetAttrStep{Name: "sensitive_value"}}, Marks: cty.NewValueMarks(marks.Sensitive)},
 				},

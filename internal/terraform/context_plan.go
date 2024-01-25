@@ -632,8 +632,13 @@ func (c *Context) planWalk(config *configs.Config, prevRunState *states.State, o
 	walker.RefreshState.RemovePlannedResourceInstanceObjects()
 	priorState := walker.RefreshState.Close()
 
-	driftedResources, driftDiags := c.driftedResources(config, prevRunState, priorState, moveResults)
-	diags = diags.Append(driftDiags)
+	var driftedResources []*plans.ResourceInstanceChangeSrc
+	if !opts.SkipRefresh {
+		// TODO: `driftedResources` shouldn't need to check most `cloudscript` resources
+		drifted, driftDiags := c.driftedResources(config, prevRunState, priorState, moveResults)
+		diags = diags.Append(driftDiags)
+		driftedResources = append(driftedResources, drifted...)
+	}
 
 	plan := &plans.Plan{
 		UIMode:           opts.Mode,

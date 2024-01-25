@@ -194,6 +194,8 @@ type ReadResourceRequest struct {
 	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
 	ResourceName string
 	Dependencies []string // `${type}.${name}` or `data.${type}.${name}`
+	Marks        []cty.PathValueMarks
+	//
 
 	// PriorState contains the previously saved state value for this resource.
 	PriorState cty.Value
@@ -219,6 +221,9 @@ type ReadResourceResponse struct {
 	// Private is an opaque blob that will be stored in state along with the
 	// resource. It is intended only for interpretation by the provider itself.
 	Private []byte
+
+	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
+	Marks []cty.PathValueMarks
 }
 
 type PlanResourceChangeRequest struct {
@@ -283,6 +288,9 @@ type ApplyResourceChangeRequest struct {
 	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
 	ResourceName string
 	Dependencies []string // `${type}.${name}` or `data.${type}.${name}`
+	PriorMarks   []cty.PathValueMarks
+	PlannedMarks []cty.PathValueMarks
+	//
 
 	// PriorState is the current state of resource.
 	PriorState cty.Value
@@ -312,6 +320,9 @@ type ApplyResourceChangeResponse struct {
 	// In the event of an error, NewState should represent the most recent
 	// known state of the resource, if it exists.
 	NewState cty.Value
+
+	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
+	Marks []cty.PathValueMarks
 
 	// Private is an opaque blob that will be stored in state along with the
 	// resource. It is intended only for interpretation by the provider itself.
@@ -392,6 +403,8 @@ type ReadDataSourceRequest struct {
 	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
 	ResourceName string
 	Dependencies []string // `${type}.${name}` or `data.${type}.${name}`
+	Marks        []cty.PathValueMarks
+	//
 
 	// Config is the complete configuration for the requested data source.
 	Config cty.Value
@@ -409,4 +422,7 @@ type ReadDataSourceResponse struct {
 
 	// Diagnostics contains any warnings or errors from the method call.
 	Diagnostics tfdiags.Diagnostics
+
+	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
+	Marks []cty.PathValueMarks
 }

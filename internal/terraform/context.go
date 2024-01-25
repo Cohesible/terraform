@@ -46,7 +46,7 @@ type ContextOpts struct {
 	Installer       *providercache.Installer
 	PersistLockFile func(*depsfile.Locks) tfdiags.Diagnostics
 	KeepAlive       bool
-	ProviderCache   map[string]*CachedProvider
+	ProviderCache   *ProviderCache
 
 	UIInput UIInput
 }
@@ -97,7 +97,7 @@ type Context struct {
 	encodeCache *EncodeCache
 }
 
-func (c *Context) GetProviderCache() map[string]*CachedProvider {
+func (c *Context) GetProviderCache() *ProviderCache {
 	return c.plugins.ProviderCache
 }
 
@@ -112,8 +112,6 @@ func (c *Context) GetProviderCache() map[string]*CachedProvider {
 // invalid and must not be used.
 func NewContext(opts *ContextOpts) (*Context, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
-
-	log.Printf("[TRACE] terraform.NewContext: starting")
 
 	// Copy all the hooks and add our stop hook. We don't append directly
 	// to the Config so that we're not modifying that in-place.
@@ -145,8 +143,6 @@ func NewContext(opts *ContextOpts) (*Context, tfdiags.Diagnostics) {
 		plugins.SetCache(opts.ProviderCache)
 		log.Printf("[INFO] terraform.NewContext: set provider cache")
 	}
-
-	log.Printf("[TRACE] terraform.NewContext: complete")
 
 	return &Context{
 		hooks:   hooks,
@@ -309,12 +305,12 @@ func (c *Context) watchStop(walker *ContextGraphWalker) (chan struct{}, <-chan s
 		{
 			// Copy the providers so that a misbehaved blocking Stop doesn't
 			// completely hang Terraform.
-			walker.providerLock.Lock()
-			ps := make([]providers.Interface, 0, len(walker.providerCache))
-			for _, p := range walker.providerCache {
+			walker.providerCache.mu.Lock()
+			ps := make([]providers.Interface, 0, len(walker.providerCache.providers))
+			for _, p := range walker.providerCache.providers {
 				ps = append(ps, p.provider)
 			}
-			defer walker.providerLock.Unlock()
+			defer walker.providerCache.mu.Unlock()
 
 			for _, p := range ps {
 				// We ignore the error for now since there isn't any reasonable

@@ -302,7 +302,7 @@ type Operation struct {
 	GenerateConfigOut string
 
 	KeepAlive     bool
-	ProviderCache map[string]*terraform.CachedProvider
+	ProviderCache *terraform.ProviderCache
 	StateManager  statemgr.Full
 	Cache         *terraform.Cache
 }

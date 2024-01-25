@@ -291,7 +291,7 @@ func TestMarshalResources(t *testing.T) {
 							Current: &states.ResourceInstanceObjectSrc{
 								Status:    states.ObjectReady,
 								AttrsJSON: []byte(`{"foozles":"confuzles"}`),
-								AttrSensitivePaths: []cty.PathValueMarks{{
+								AttrMarks: []cty.PathValueMarks{{
 									Path:  cty.Path{cty.GetAttrStep{Name: "foozles"}},
 									Marks: cty.NewValueMarks(marks.Sensitive)},
 								},
@@ -557,7 +557,7 @@ func TestMarshalResources(t *testing.T) {
 							Current: &states.ResourceInstanceObjectSrc{
 								Status:    states.ObjectReady,
 								AttrsJSON: []byte(`{"data":{"woozles":"confuzles"}}`),
-								AttrSensitivePaths: []cty.PathValueMarks{{
+								AttrMarks: []cty.PathValueMarks{{
 									Path:  cty.Path{cty.GetAttrStep{Name: "data"}},
 									Marks: cty.NewValueMarks(marks.Sensitive)},
 								},

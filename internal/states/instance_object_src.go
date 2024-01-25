@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/configs/hcl2shim"
+	"github.com/hashicorp/terraform/internal/lang/marks"
 )
 
 // ResourceInstanceObjectSrc is a not-fully-decoded version of
@@ -38,6 +39,8 @@ type ResourceInstanceObjectSrc struct {
 	// always be conformant to the current schema version and the current
 	// schema version should be recorded in the SchemaVersion field.
 	AttrsJSON []byte
+	AttrMarks []cty.PathValueMarks
+	Pointers  []marks.DataPointer
 
 	// AttrsFlat is a legacy form of attributes used in older state file
 	// formats, and in the new state format for objects that haven't yet been
@@ -51,10 +54,6 @@ type ResourceInstanceObjectSrc struct {
 	// writing new or updated objects to state; instead, callers must follow
 	// the recommendations in the AttrsJSON documentation above.
 	AttrsFlat map[string]string
-
-	// AttrSensitivePaths is an array of paths to mark as sensitive coming out of
-	// state, or to save as sensitive paths when saving state
-	AttrSensitivePaths []cty.PathValueMarks
 
 	// These fields all correspond to the fields of the same name on
 	// ResourceInstanceObject.
@@ -87,8 +86,17 @@ func (os *ResourceInstanceObjectSrc) Decode(ty cty.Type) (*ResourceInstanceObjec
 	} else {
 		val, err = ctyjson.Unmarshal(os.AttrsJSON, ty)
 		// Mark the value with paths if applicable
-		if os.AttrSensitivePaths != nil {
-			val = val.MarkWithPaths(os.AttrSensitivePaths)
+		if os.AttrMarks != nil {
+			val = val.MarkWithPaths(os.AttrMarks)
+		}
+		if os.Pointers != nil {
+			var markers []cty.PathValueMarks
+			for _, p := range os.Pointers {
+				vm := cty.NewValueMarks(marks.NewPointerAnnotation(p.Value, ""))
+				markers = append(markers, cty.PathValueMarks{Path: p.Path, Marks: vm})
+			}
+
+			val = val.MarkWithPaths(markers)
 		}
 		if err != nil {
 			return nil, err

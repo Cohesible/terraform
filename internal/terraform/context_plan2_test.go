@@ -194,7 +194,7 @@ data "test_data_source" "foo" {
 		&states.ResourceInstanceObjectSrc{
 			Status:    states.ObjectReady,
 			AttrsJSON: []byte(`{"id":"data_id", "foo":[{"bar":"baz"}]}`),
-			AttrSensitivePaths: []cty.PathValueMarks{
+			AttrMarks: []cty.PathValueMarks{
 				{
 					Path:  cty.GetAttrPath("foo"),
 					Marks: cty.NewValueMarks(marks.Sensitive),
@@ -2337,7 +2337,7 @@ data "test_data_source" "foo" {
 		&states.ResourceInstanceObjectSrc{
 			Status:    states.ObjectReady,
 			AttrsJSON: []byte(`{"string":"data_id", "foo":[{"bar":"old"}]}`),
-			AttrSensitivePaths: []cty.PathValueMarks{
+			AttrMarks: []cty.PathValueMarks{
 				{
 					Path:  cty.GetAttrPath("foo"),
 					Marks: cty.NewValueMarks(marks.Sensitive),
@@ -2351,7 +2351,7 @@ data "test_data_source" "foo" {
 		&states.ResourceInstanceObjectSrc{
 			Status:    states.ObjectReady,
 			AttrsJSON: []byte(`{"sensitive":"old"}`),
-			AttrSensitivePaths: []cty.PathValueMarks{
+			AttrMarks: []cty.PathValueMarks{
 				{
 					Path:  cty.GetAttrPath("sensitive"),
 					Marks: cty.NewValueMarks(marks.Sensitive),

@@ -10,11 +10,21 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-// filterMarks removes any PathValueMarks from marks which cannot be applied to
+func filterMarks(marks []cty.PathValueMarks, target interface{}) []cty.PathValueMarks {
+	var res []cty.PathValueMarks
+	for _, mark := range marks {
+		if _, ok := mark.Marks[target]; ok {
+			res = append(res, mark)
+		}
+	}
+	return res
+}
+
+// validateMarks removes any PathValueMarks from marks which cannot be applied to
 // the given value. When comparing existing marks to those from a map or other
 // dynamic value, we may not have values at the same paths and need to strip
 // out irrelevant marks.
-func filterMarks(val cty.Value, marks []cty.PathValueMarks) []cty.PathValueMarks {
+func validateMarks(val cty.Value, marks []cty.PathValueMarks) []cty.PathValueMarks {
 	var res []cty.PathValueMarks
 	for _, mark := range marks {
 		// any error here just means the path cannot apply to this value, so we
@@ -55,4 +65,8 @@ func marksEqual(a, b []cty.PathValueMarks) bool {
 	}
 
 	return true
+}
+
+func marksEqualByTarget(a, b []cty.PathValueMarks, target interface{}) bool {
+	return marksEqual(filterMarks(a, target), filterMarks(b, target))
 }

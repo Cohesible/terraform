@@ -5,6 +5,7 @@ package states
 
 import (
 	"github.com/hashicorp/terraform/internal/addrs"
+	"github.com/hashicorp/terraform/internal/lang/marks"
 	"github.com/zclconf/go-cty/cty"
 )
 
@@ -149,9 +150,15 @@ func (os *ResourceInstanceObjectSrc) DeepCopy() *ResourceInstanceObjectSrc {
 	}
 
 	var attrPaths []cty.PathValueMarks
-	if os.AttrSensitivePaths != nil {
-		attrPaths = make([]cty.PathValueMarks, len(os.AttrSensitivePaths))
-		copy(attrPaths, os.AttrSensitivePaths)
+	if os.AttrMarks != nil {
+		attrPaths = make([]cty.PathValueMarks, len(os.AttrMarks))
+		copy(attrPaths, os.AttrMarks)
+	}
+
+	var pointers []marks.DataPointer
+	if os.Pointers != nil {
+		pointers = make([]marks.DataPointer, len(os.Pointers))
+		copy(pointers, os.Pointers)
 	}
 
 	var private []byte
@@ -174,7 +181,8 @@ func (os *ResourceInstanceObjectSrc) DeepCopy() *ResourceInstanceObjectSrc {
 		Private:             private,
 		AttrsFlat:           attrsFlat,
 		AttrsJSON:           attrsJSON,
-		AttrSensitivePaths:  attrPaths,
+		AttrMarks:           attrPaths,
+		Pointers:            pointers,
 		Dependencies:        dependencies,
 		CreateBeforeDestroy: os.CreateBeforeDestroy,
 		Imported:            os.Imported,

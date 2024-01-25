@@ -25,7 +25,7 @@ import (
 
 type StartSessionCommand struct {
 	Meta
-	ProviderCache map[string]*terraform.CachedProvider
+	ProviderCache *terraform.ProviderCache
 	StateManager  statemgr.Full
 	Cache         *terraform.Cache
 }

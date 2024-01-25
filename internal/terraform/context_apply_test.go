@@ -11981,7 +11981,7 @@ resource "test_resource" "foo" {
 	}
 
 	fooState := state.ResourceInstance(addr)
-	verifySensitiveValue(fooState.Current.AttrSensitivePaths)
+	verifySensitiveValue(fooState.Current.AttrMarks)
 }
 
 func TestContext2Apply_variableSensitivityProviders(t *testing.T) {
@@ -12051,10 +12051,10 @@ resource "test_resource" "baz" {
 	}
 
 	barState := state.ResourceInstance(barAddr)
-	verifySensitiveValue(barState.Current.AttrSensitivePaths)
+	verifySensitiveValue(barState.Current.AttrMarks)
 
 	bazState := state.ResourceInstance(bazAddr)
-	verifySensitiveValue(bazState.Current.AttrSensitivePaths)
+	verifySensitiveValue(bazState.Current.AttrMarks)
 }
 
 func TestContext2Apply_variableSensitivityChange(t *testing.T) {
@@ -12108,10 +12108,10 @@ resource "test_resource" "foo" {
 
 	fooState := state.ResourceInstance(addr)
 
-	if len(fooState.Current.AttrSensitivePaths) != 1 {
-		t.Fatalf("wrong number of sensitive paths, expected 1, got, %v", len(fooState.Current.AttrSensitivePaths))
+	if len(fooState.Current.AttrMarks) != 1 {
+		t.Fatalf("wrong number of sensitive paths, expected 1, got, %v", len(fooState.Current.AttrMarks))
 	}
-	got := fooState.Current.AttrSensitivePaths[0]
+	got := fooState.Current.AttrMarks[0]
 	want := cty.PathValueMarks{
 		Path:  cty.GetAttrPath("value"),
 		Marks: cty.NewValueMarks(marks.Sensitive),
@@ -12154,11 +12154,11 @@ resource "test_resource" "foo" {
 	assertNoErrors(t, diags)
 
 	fooState2 := stateWithoutSensitive.ResourceInstance(addr)
-	if len(fooState2.Current.AttrSensitivePaths) > 0 {
+	if len(fooState2.Current.AttrMarks) > 0 {
 		t.Fatalf(
 			"wrong number of sensitive paths, expected 0, got, %v\n%s",
-			len(fooState2.Current.AttrSensitivePaths),
-			spew.Sdump(fooState2.Current.AttrSensitivePaths),
+			len(fooState2.Current.AttrMarks),
+			spew.Sdump(fooState2.Current.AttrMarks),
 		)
 	}
 }
@@ -12591,7 +12591,7 @@ func TestContext2Apply_dataSensitive(t *testing.T) {
 	addr := mustResourceInstanceAddr("data.null_data_source.testing")
 
 	dataSourceState := state.ResourceInstance(addr)
-	pvms := dataSourceState.Current.AttrSensitivePaths
+	pvms := dataSourceState.Current.AttrMarks
 	if len(pvms) != 1 {
 		t.Fatalf("expected 1 sensitive path, got %d", len(pvms))
 	}

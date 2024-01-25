@@ -109,6 +109,7 @@ func (n *NodePlannableResourceInstance) dataResourceExecute(ctx EvalContext) (di
 
 	// write the data source into both the refresh state and the
 	// working state
+	// TODO: is this needed?
 	diags = diags.Append(n.writeResourceInstanceState(ctx, state, refreshState))
 	if diags.HasErrors() {
 		return diags

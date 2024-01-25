@@ -61,9 +61,9 @@ type BuiltinEvalContext struct {
 
 	Hooks               []Hook
 	InputValue          UIInput
-	ProviderCache       map[string]*CachedProvider
+	ProviderCache       *ProviderCache
 	ProviderInputConfig map[string]map[string]cty.Value
-	ProviderLock        *sync.Mutex
+	ProviderInputLock   *sync.Mutex
 	ProviderLocks       map[string]*sync.Mutex
 
 	ProvisionerCache      map[string]provisioners.Interface
@@ -136,15 +136,15 @@ func (ctx *BuiltinEvalContext) InitProvider(addr addrs.AbsProviderConfig) (provi
 
 	log.Printf("[TRACE] BuiltinEvalContext: Initialized %q provider for %s", addr.String(), addr)
 
-	ctx.ProviderLock.Lock()
-	defer ctx.ProviderLock.Unlock()
+	ctx.ProviderCache.mu.Lock()
+	defer ctx.ProviderCache.mu.Unlock()
 
 	// Check again in case the lock was held during configuration
-	if cached, exists := ctx.ProviderCache[key]; exists {
+	if cached, exists := ctx.ProviderCache.providers[key]; exists {
 		return cached.provider, nil
 	}
 
-	ctx.ProviderCache[key] = &CachedProvider{
+	ctx.ProviderCache.providers[key] = &CachedProvider{
 		provider:   p,
 		configured: false,
 	}
@@ -153,10 +153,10 @@ func (ctx *BuiltinEvalContext) InitProvider(addr addrs.AbsProviderConfig) (provi
 }
 
 func (ctx *BuiltinEvalContext) Provider(addr addrs.AbsProviderConfig) providers.Interface {
-	ctx.ProviderLock.Lock()
-	defer ctx.ProviderLock.Unlock()
+	ctx.ProviderCache.mu.Lock()
+	defer ctx.ProviderCache.mu.Unlock()
 
-	cached := ctx.ProviderCache[addr.String()]
+	cached := ctx.ProviderCache.providers[addr.String()]
 	if cached == nil {
 		return nil
 	}
@@ -173,15 +173,15 @@ func (ctx *BuiltinEvalContext) ResourceSchema(provider addrs.AbsProviderConfig, 
 }
 
 func (ctx *BuiltinEvalContext) CloseProvider(addr addrs.AbsProviderConfig) error {
-	ctx.ProviderLock.Lock()
-	defer ctx.ProviderLock.Unlock()
+	ctx.ProviderCache.mu.Lock()
+	defer ctx.ProviderCache.mu.Unlock()
 
 	key := addr.String()
-	cached := ctx.ProviderCache[key]
+	cached := ctx.ProviderCache.providers[key]
 	if cached != nil {
 		log.Printf("[INFO] BuiltinEvalContext: closing provider %s", addr)
 
-		delete(ctx.ProviderCache, key)
+		delete(ctx.ProviderCache.providers, key)
 		return cached.provider.Close()
 	}
 
@@ -204,7 +204,7 @@ func (ctx *BuiltinEvalContext) ConfigureProvider(addr addrs.AbsProviderConfig, c
 
 	key := addr.String()
 
-	ctx.ProviderLock.Lock()
+	ctx.ProviderCache.mu.Lock()
 
 	if _, exists := ctx.ProviderLocks[key]; !exists {
 		ctx.ProviderLocks[key] = &sync.Mutex{}
@@ -213,10 +213,10 @@ func (ctx *BuiltinEvalContext) ConfigureProvider(addr addrs.AbsProviderConfig, c
 
 	l.Lock()
 	defer l.Unlock()
-	cached := ctx.ProviderCache[key]
+	cached := ctx.ProviderCache.providers[key]
 	configured := cached.configured
 
-	ctx.ProviderLock.Unlock()
+	ctx.ProviderCache.mu.Unlock()
 
 	if configured {
 		return diags
@@ -245,8 +245,8 @@ func (ctx *BuiltinEvalContext) ConfigureProvider(addr addrs.AbsProviderConfig, c
 }
 
 func (ctx *BuiltinEvalContext) ProviderInput(pc addrs.AbsProviderConfig) map[string]cty.Value {
-	ctx.ProviderLock.Lock()
-	defer ctx.ProviderLock.Unlock()
+	ctx.ProviderInputLock.Lock()
+	defer ctx.ProviderInputLock.Unlock()
 
 	if !pc.Module.Equal(ctx.Path().Module()) {
 		// This indicates incorrect use of InitProvider: it should be used
@@ -271,9 +271,9 @@ func (ctx *BuiltinEvalContext) SetProviderInput(pc addrs.AbsProviderConfig, c ma
 	}
 
 	// Save the configuration
-	ctx.ProviderLock.Lock()
+	ctx.ProviderInputLock.Lock()
 	ctx.ProviderInputConfig[absProvider.String()] = c
-	ctx.ProviderLock.Unlock()
+	ctx.ProviderInputLock.Unlock()
 }
 
 func (ctx *BuiltinEvalContext) Provisioner(n string) (provisioners.Interface, error) {

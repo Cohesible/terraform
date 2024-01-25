@@ -25,13 +25,18 @@ type CachedProvider struct {
 	configured bool
 }
 
+type ProviderCache struct {
+	mu        sync.RWMutex
+	providers map[string]*CachedProvider
+}
+
 // contextPlugins represents a library of available plugins (providers and
 // provisioners) which we assume will all be used with the same
 // terraform.Context, and thus it'll be safe to cache certain information
 // about the providers for performance reasons.
 type contextPlugins struct {
 	KeepAlive            bool
-	ProviderCache        map[string]*CachedProvider
+	ProviderCache        *ProviderCache
 	providerFactories    map[addrs.Provider]providers.Factory
 	provisionerFactories map[string]provisioners.Factory
 
@@ -43,7 +48,6 @@ type contextPlugins struct {
 	providerSchemas    map[addrs.Provider]*ProviderSchema
 	provisionerSchemas map[string]*configschema.Block
 	schemasLock        sync.RWMutex
-	cacheLock          sync.RWMutex
 	providerLocks      map[addrs.Provider]*sync.Mutex
 	// schemaLocks        map[addrs.Provider]*sync.Mutex
 
@@ -70,7 +74,7 @@ func newContextPlugins(
 }
 
 func (cp *contextPlugins) init() {
-	cp.ProviderCache = map[string]*CachedProvider{}
+	cp.ProviderCache = &ProviderCache{mu: sync.RWMutex{}, providers: map[string]*CachedProvider{}}
 	cp.providerSchemas = make(map[addrs.Provider]*ProviderSchema, len(cp.providerFactories))
 	cp.provisionerSchemas = make(map[string]*configschema.Block, len(cp.provisionerFactories))
 	cp.providerLocks = make(map[addrs.Provider]*sync.Mutex, len(cp.providerFactories))
@@ -82,11 +86,11 @@ func (cp *contextPlugins) init() {
 	}
 }
 
-func (cp *contextPlugins) SetCache(cache map[string]*CachedProvider) {
+func (cp *contextPlugins) SetCache(cache *ProviderCache) {
 	cp.ProviderCache = cache
 }
 
-func (cp *contextPlugins) GetCache() map[string]*CachedProvider {
+func (cp *contextPlugins) GetCache() *ProviderCache {
 	return cp.ProviderCache
 }
 
@@ -122,23 +126,23 @@ func (cp *contextPlugins) createProvider(addr addrs.Provider) (providers.Interfa
 }
 
 func (cp *contextPlugins) NewProviderInstance(addr addrs.Provider) (providers.Interface, error) {
-	cp.cacheLock.RLock()
-	if cached, exists := cp.ProviderCache[addr.String()]; exists {
-		defer cp.cacheLock.RUnlock()
+	cp.ProviderCache.mu.RLock()
+	if cached, exists := cp.ProviderCache.providers[addr.String()]; exists {
+		defer cp.ProviderCache.mu.RUnlock()
 
 		return cached.provider, nil
 	}
 
-	cp.cacheLock.RUnlock()
+	cp.ProviderCache.mu.RUnlock()
 
 	p, err := cp.createProvider(addr)
 	if err != nil {
 		return nil, err
 	}
 
-	cp.cacheLock.Lock()
-	cp.ProviderCache[addr.String()] = &CachedProvider{provider: p}
-	cp.cacheLock.Unlock()
+	cp.ProviderCache.mu.Lock()
+	cp.ProviderCache.providers[addr.String()] = &CachedProvider{provider: p}
+	cp.ProviderCache.mu.Unlock()
 
 	return p, nil
 }

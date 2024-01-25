@@ -19,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/experiments"
 	"github.com/hashicorp/terraform/internal/lang/funcs"
+	"github.com/hashicorp/terraform/internal/lang/marks"
 	"github.com/hashicorp/terraform/internal/tfdiags"
 )
 
@@ -168,6 +169,7 @@ func (s *Scope) Functions() map[string]function.Function {
 		})
 
 		s.funcs["generateidentifier"] = MakeGenerateIdentifierFunc(s.Data)
+		s.funcs["markpointer"] = MakeMarkDataPointerFn()
 
 		if s.ConsoleMode {
 			// The type function is only available in terraform console.
@@ -312,6 +314,25 @@ func MakeGenerateIdentifierFunc(data Data) function.Function {
 			}
 
 			return attr, nil
+		},
+	})
+}
+
+func MakeMarkDataPointerFn() function.Function {
+	return function.New(&function.Spec{
+		Params: []function.Parameter{
+			{
+				Name: "target",
+				Type: cty.DynamicPseudoType,
+			},
+			{
+				Name: "value",
+				Type: cty.String,
+			},
+		},
+		Type: function.StaticReturnType(cty.DynamicPseudoType),
+		Impl: func(args []cty.Value, retType cty.Type) (cty.Value, error) {
+			return args[0].Mark(marks.NewPointerAnnotation(args[1].AsString(), "")), nil
 		},
 	})
 }

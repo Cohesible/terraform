@@ -10,6 +10,7 @@ import (
 	ctyjson "github.com/zclconf/go-cty/cty/json"
 
 	"github.com/hashicorp/terraform/internal/addrs"
+	"github.com/hashicorp/terraform/internal/lang/marks"
 )
 
 // ResourceInstanceObject is the local representation of a specific remote
@@ -128,16 +129,44 @@ func (o *ResourceInstanceObject) Encode(ty cty.Type, schemaVersion uint64) (*Res
 
 	sort.Slice(dependencies, func(i, j int) bool { return dependencies[i].String() < dependencies[j].String() })
 
+	pointers := ExtractPointers(pvm)
+
 	return &ResourceInstanceObjectSrc{
 		SchemaVersion:       schemaVersion,
 		AttrsJSON:           src,
-		AttrSensitivePaths:  pvm,
+		AttrMarks:           pvm,
+		Pointers:            pointers,
 		Private:             o.Private,
 		Status:              o.Status,
 		Dependencies:        dependencies,
 		CreateBeforeDestroy: o.CreateBeforeDestroy,
 		Imported:            o.Imported,
 	}, nil
+}
+
+func ExtractPointers(pvm []cty.PathValueMarks) (pointers []marks.DataPointer) {
+	for _, vm := range pvm {
+		var annotations []marks.DataPointerAnnotation
+		for k := range vm.Marks {
+			switch v := k.(type) {
+			case marks.DataPointerAnnotation:
+				annotations = append(annotations, v)
+			}
+		}
+
+		sort.Slice(annotations, func(i, j int) bool {
+			return annotations[j].Timestamp.Before(annotations[i].Timestamp)
+		})
+
+		if len(annotations) >= 1 {
+			pointers = append(pointers, marks.DataPointer{
+				Path:  vm.Path,
+				Value: annotations[0].Value,
+			})
+		}
+	}
+
+	return pointers
 }
 
 // AsTainted returns a deep copy of the receiver with the status updated to

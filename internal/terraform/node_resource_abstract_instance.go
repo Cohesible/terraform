@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform/internal/configs"
 	"github.com/hashicorp/terraform/internal/configs/configschema"
 	"github.com/hashicorp/terraform/internal/instances"
+	"github.com/hashicorp/terraform/internal/lang/marks"
 	"github.com/hashicorp/terraform/internal/plans"
 	"github.com/hashicorp/terraform/internal/plans/objchange"
 	"github.com/hashicorp/terraform/internal/providers"
@@ -593,6 +594,7 @@ func (n *NodeAbstractResourceInstance) refresh(ctx EvalContext, deposedKey state
 	if n.ResolvedProvider.Provider.Type == "cloudscript" {
 		providerReq.ResourceName = n.Addr.Resource.Resource.Name
 		providerReq.Dependencies = n.getCloudScriptResourceDeps()
+		providerReq.Marks = priorPaths
 	}
 
 	resp := provider.ReadResource(providerReq)
@@ -662,6 +664,10 @@ func (n *NodeAbstractResourceInstance) refresh(ctx EvalContext, deposedKey state
 	// Mark the value if necessary
 	if len(priorPaths) > 0 {
 		ret.Value = ret.Value.MarkWithPaths(priorPaths)
+	}
+
+	if len(resp.Marks) > 0 {
+		ret.Value = ret.Value.MarkWithPaths(resp.Marks)
 	}
 
 	return ret, diags
@@ -1128,7 +1134,7 @@ func (n *NodeAbstractResourceInstance) plan(
 	// is not functionally significant and the prior state can be returned. If a
 	// new mark was also discarded from that config change, it needs to be
 	// ignored here to prevent an errant update action.
-	if action == plans.NoOp && !marksEqual(filterMarks(plannedNewVal, unmarkedPaths), priorPaths) {
+	if action == plans.NoOp && !marksEqualByTarget(validateMarks(plannedNewVal, unmarkedPaths), priorPaths, marks.Sensitive) {
 		action = plans.Update
 	}
 
@@ -1513,6 +1519,7 @@ func (n *NodeAbstractResourceInstance) readDataSource(ctx EvalContext, configVal
 	if n.ResolvedProvider.Provider.Type == "cloudscript" {
 		req.ResourceName = n.Addr.Resource.Resource.Name
 		req.Dependencies = n.getCloudScriptResourceDeps()
+		req.Marks = pvm
 	}
 
 	resp := provider.ReadDataSource(req)
@@ -1573,6 +1580,10 @@ func (n *NodeAbstractResourceInstance) readDataSource(ctx EvalContext, configVal
 
 	if len(pvm) > 0 {
 		newVal = newVal.MarkWithPaths(pvm)
+	}
+
+	if len(resp.Marks) > 0 {
+		newVal = newVal.MarkWithPaths(resp.Marks)
 	}
 
 	diags = diags.Append(ctx.Hook(func(h Hook) (HookAction, error) {
@@ -2367,6 +2378,8 @@ func (n *NodeAbstractResourceInstance) apply(
 	if n.ResolvedProvider.Provider.Type == "cloudscript" {
 		req.ResourceName = n.Addr.Resource.Resource.Name
 		req.Dependencies = n.getCloudScriptResourceDeps()
+		req.PriorMarks = beforePaths
+		req.PlannedMarks = afterPaths
 	}
 
 	resp := provider.ApplyResourceChange(req)
@@ -2386,6 +2399,10 @@ func (n *NodeAbstractResourceInstance) apply(
 	// If we have paths to mark, mark those on this new value
 	if len(afterPaths) > 0 {
 		newVal = newVal.MarkWithPaths(afterPaths)
+	}
+
+	if len(resp.Marks) > 0 {
+		newVal = newVal.MarkWithPaths(resp.Marks)
 	}
 
 	if newVal == cty.NilVal {
