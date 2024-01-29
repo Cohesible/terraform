@@ -149,12 +149,12 @@ func (m *Meta) shouldInclude(moduleName, testSuiteId, executionScope string) boo
 }
 
 func (m *Meta) loadTargets(rootDir string) ([]addrs.Targetable, tfdiags.Diagnostics) {
-	targets := make([]addrs.Targetable, 0)
 	mod, diags := m.loadSingleModule(rootDir)
 	if diags.HasErrors() {
 		return nil, diags
 	}
 
+	targets := map[string]addrs.Targetable{}
 	for _, r := range mod.ManagedResources {
 		parts := strings.Split(r.ModuleName, "#")
 		moduleName := parts[0]
@@ -173,11 +173,24 @@ func (m *Meta) loadTargets(rootDir string) ([]addrs.Targetable, tfdiags.Diagnost
 		}
 
 		if m.shouldInclude(moduleName, testSuiteId, executionScope) {
-			targets = append(targets, r.Addr().Absolute(addrs.RootModuleInstance))
+			addr := r.Addr().Absolute(addrs.RootModuleInstance)
+			targets[addr.String()] = addr
 		}
 	}
 
-	return targets, nil
+	for _, r := range mod.Moved {
+		key := r.To.String()
+		if _, ok := targets[key]; ok {
+			targets[r.From.String()] = r.From.AbsTargetable(addrs.RootModuleInstance)
+		}
+	}
+
+	result := make([]addrs.Targetable, 0)
+	for _, t := range targets {
+		result = append(result, t)
+	}
+
+	return result, nil
 }
 
 // loadHCLFile reads an arbitrary HCL file and returns the unprocessed body

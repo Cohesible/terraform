@@ -42,8 +42,9 @@ type Scope struct {
 	// then differ during apply.
 	PureOnly bool
 
-	funcs     map[string]function.Function
-	funcsLock sync.Mutex
+	NameGenerator *NameGenerator
+	funcs         map[string]function.Function
+	funcsLock     sync.Mutex
 
 	// activeExperiments is an optional set of experiments that should be
 	// considered as active in the module that this scope will be used for.

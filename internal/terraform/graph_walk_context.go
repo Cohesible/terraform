@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform/internal/configs"
 	"github.com/hashicorp/terraform/internal/configs/configschema"
 	"github.com/hashicorp/terraform/internal/instances"
+	"github.com/hashicorp/terraform/internal/lang"
 	"github.com/hashicorp/terraform/internal/plans"
 	"github.com/hashicorp/terraform/internal/provisioners"
 	"github.com/hashicorp/terraform/internal/refactoring"
@@ -60,6 +61,8 @@ type ContextGraphWalker struct {
 	provisionerLock    sync.Mutex
 
 	providerLocks map[string]*sync.Mutex
+
+	nameGenerator *lang.NameGenerator
 }
 
 func (w *ContextGraphWalker) EnterPath(path addrs.ModuleInstance) EvalContext {
@@ -94,6 +97,7 @@ func (w *ContextGraphWalker) EvalContext() EvalContext {
 		VariableValues:     w.variableValues,
 		VariableValuesLock: &w.variableValuesLock,
 		PlanTimestamp:      w.PlanTimestamp,
+		NameGenerator:      w.nameGenerator,
 	}
 
 	ctx := &BuiltinEvalContext{
@@ -131,6 +135,7 @@ func (w *ContextGraphWalker) init() {
 	w.provisionerSchemas = make(map[string]*configschema.Block)
 	w.variableValues = make(map[string]map[string]cty.Value)
 	w.providerLocks = make(map[string]*sync.Mutex)
+	w.nameGenerator = &lang.NameGenerator{}
 
 	// Populate root module variable values. Other modules will be populated
 	// during the graph walk.

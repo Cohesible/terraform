@@ -66,6 +66,8 @@ type Evaluator struct {
 	Changes *plans.ChangesSync
 
 	PlanTimestamp time.Time
+
+	NameGenerator *lang.NameGenerator
 }
 
 // Scope creates an evaluation scope for the given module path and optional
@@ -82,6 +84,7 @@ func (e *Evaluator) Scope(data lang.Data, self addrs.Referenceable, source addrs
 		PureOnly:      e.Operation != walkApply && e.Operation != walkDestroy && e.Operation != walkEval,
 		BaseDir:       ".", // Always current working directory for now.
 		PlanTimestamp: e.PlanTimestamp,
+		NameGenerator: e.NameGenerator,
 	}
 }
 

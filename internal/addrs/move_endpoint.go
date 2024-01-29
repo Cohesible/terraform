@@ -113,7 +113,16 @@ func (e *MoveEndpoint) ConfigMoveable(baseModule Module) ConfigMoveable {
 		// address representation.
 		panic(fmt.Sprintf("unsupported address type %T", addr))
 	}
+}
 
+func (e *MoveEndpoint) AbsTargetable(baseModule ModuleInstance) AbsResource {
+	addr := e.relSubject
+	switch addr := addr.(type) {
+	case AbsResourceInstance:
+		return addr.Resource.Resource.Absolute(baseModule)
+	default:
+		panic(fmt.Sprintf("unsupported address type %T", addr))
+	}
 }
 
 // ParseMoveEndpoint attempts to interpret the given traversal as a

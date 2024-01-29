@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/hcl/v2/ext/tryfunc"
@@ -168,7 +169,7 @@ func (s *Scope) Functions() map[string]function.Function {
 			return s.funcs
 		})
 
-		s.funcs["generateidentifier"] = MakeGenerateIdentifierFunc(s.Data)
+		s.funcs["generateidentifier"] = MakeGenerateIdentifierFunc(s.Data, s.NameGenerator)
 		s.funcs["markpointer"] = MakeMarkDataPointerFn()
 
 		if s.ConsoleMode {
@@ -234,9 +235,33 @@ func (s *Scope) experimentalFunction(experiment experiments.Experiment, fn funct
 	})
 }
 
-var nameCounter int
-var previousTime int64 // ms
-func MakeGenerateIdentifierFunc(data Data) function.Function {
+type NameGenerator struct {
+	mu           sync.Mutex
+	counter      int
+	previousTime int64 // ms
+}
+
+func (g *NameGenerator) generateName(maxLength int, sep string) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	t := time.Now().UnixMilli()
+	if t != g.previousTime {
+		g.previousTime = t
+		g.counter = 0
+	}
+
+	g.counter += 1
+	id := strings.Join([]string{strconv.FormatInt(t, 10), strconv.Itoa(g.counter)}, sep)
+	end := len(id) - (maxLength + 3 + len(sep) - 1)
+	if end > 0 {
+		id = id[:end]
+	}
+
+	return strings.Join([]string{"csc", id}, sep)
+}
+
+func MakeGenerateIdentifierFunc(data Data, names *NameGenerator) function.Function {
 	return function.New(&function.Spec{
 		Params: []function.Parameter{
 			{
@@ -283,26 +308,11 @@ func MakeGenerateIdentifierFunc(data Data) function.Function {
 			}
 
 			if !r.IsKnown() {
-				// Generate an id
-				t := time.Now().UnixMilli()
-				if t != previousTime {
-					previousTime = t
-					nameCounter = 0
-				}
-
-				nameCounter += 1
-				id := strings.Join([]string{strconv.FormatInt(t, 10), strconv.Itoa(nameCounter)}, separator)
-				end := len(id) - (maxLength + 3 + len(separator) - 1)
-				if end > 0 {
-					id = id[:end]
-				}
-
-				name := strings.Join([]string{"csc", id}, separator)
-				return cty.StringVal(name), nil
+				return cty.StringVal(names.generateName(maxLength, separator)), nil
 			}
 
-			parts := strings.Split(args[1].AsString(), ".")
 			attr := r
+			parts := strings.Split(args[1].AsString(), ".")
 			for _, p := range parts {
 				if !attr.Type().IsObjectType() {
 					return cty.NilVal, diags.Append(fmt.Errorf("attempted to index a non-object value at %s", p)).Err()
@@ -310,7 +320,11 @@ func MakeGenerateIdentifierFunc(data Data) function.Function {
 				if !attr.Type().HasAttribute(p) {
 					return cty.NilVal, diags.Append(fmt.Errorf("object does not have attribute %s", p)).Err()
 				}
+
 				attr = attr.GetAttr(p)
+				if !attr.IsKnown() {
+					return cty.StringVal(names.generateName(maxLength, separator)), nil
+				}
 			}
 
 			return attr, nil
