@@ -14,28 +14,38 @@ type cached struct {
 }
 
 type Cache struct {
-	// config *configs.Module
-	values map[string]*cached
+	mu     sync.RWMutex
 	locks  LockMap
+	values map[string]*cached
 }
 
 func NewCache() *Cache {
 	return &Cache{
-		// config: config,
-		values: map[string]*cached{},
+		mu:     sync.RWMutex{},
 		locks:  NewLockMap(),
+		values: map[string]*cached{},
 	}
 }
 
 func (c *Cache) getCached(key string) *cached {
+	c.mu.RLock()
 	if v, ok := c.values[key]; ok {
+		c.mu.RUnlock()
 		return v
 	}
 
-	c.locks.LockPrimary()
-	defer c.locks.UnlockPrimary()
+	c.mu.RUnlock()
+	c.mu.Lock()
+
+	// Need to check again as multiple readers could try to write
+	if v, ok := c.values[key]; ok {
+		c.mu.Unlock()
+		return v
+	}
+
 	v := &cached{}
 	c.values[key] = v
+	c.mu.Unlock()
 
 	return v
 }
@@ -153,14 +163,4 @@ func (m *LockMap) Unlock(key string) {
 	m.primary.RLock()
 	m.locks[key].Unlock()
 	m.primary.RUnlock()
-}
-
-// Used to lock everything when adding to a map
-
-func (m *LockMap) LockPrimary() {
-	m.primary.Lock()
-}
-
-func (m *LockMap) UnlockPrimary() {
-	m.primary.Unlock()
 }
