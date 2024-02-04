@@ -280,6 +280,8 @@ func (c *StartSessionCommand) getConfig() (*configs.Config, tfdiags.Diagnostics)
 func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enhanced, args *arguments.StartSession) int {
 	needsRefresh := args.Operation.Refresh
 	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
+
 	c.KeepAlive = true
 	ops, _ := c.contextOpts()
 	tfCtx, _ := terraform.NewContext(ops)
