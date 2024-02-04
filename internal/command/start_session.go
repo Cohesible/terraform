@@ -87,34 +87,35 @@ func (c *StartSessionCommand) Run(rawArgs []string) int {
 		return 1
 	}
 
-	// Get the latest state.
-	workspace := backend.DefaultStateName
-	log.Printf("[TRACE] backend/local: requesting state manager for workspace %q", workspace)
-	_, err = be.StateMgr(workspace)
-	if err != nil {
-		diags = diags.Append(fmt.Errorf("error loading state: %w", err))
+	diags = diags.Append(c.initStateManager(be))
+	if diags.HasErrors() {
 		view.Diagnostics(diags)
 		return 1
 	}
 
-	// stateLockerView := views.NewStateLocker(arguments.ViewHuman, c.View)
-	// locker := clistate.NewLocker(0, stateLockerView).WithContext(context.Background())
-	// if diags := locker.Lock(s, "session"); diags.HasErrors() {
-	// 	view.Diagnostics(diags)
-	// 	return 1
-	// }
-
 	view.Ready()
 	c.Cache = terraform.NewCache()
-	// defer func() {
-	// 	diags := locker.Unlock()
-	// 	if diags.HasErrors() {
-	// 		view.Diagnostics(diags)
-	// 		// runningOp.Result = backend.OperationFailure
-	// 	}
-	// }()
 
 	return c.modePiped(view, be, args)
+}
+
+func (c *StartSessionCommand) initStateManager(be backend.Enhanced) tfdiags.Diagnostics {
+	var diags tfdiags.Diagnostics
+
+	workspace := backend.DefaultStateName
+	log.Printf("[TRACE] backend/local: requesting state manager for workspace %q", workspace)
+	mgr, err := be.StateMgr(workspace)
+	if err != nil {
+		return diags.Append(fmt.Errorf("error loading state: %w", err))
+	}
+
+	log.Printf("[INFO] backend: reading state for workspace %q", workspace)
+	if err := mgr.RefreshState(); err != nil {
+		return diags.Append(fmt.Errorf("error loading state: %w", err))
+	}
+
+	c.StateManager = mgr
+	return diags
 }
 
 func (c *StartSessionCommand) PrepareBackend(args *arguments.State, viewType arguments.ViewType) (backend.Enhanced, tfdiags.Diagnostics) {
@@ -151,6 +152,7 @@ func (c *StartSessionCommand) OperationRequest(
 	be backend.Enhanced,
 	view views.StartSession,
 	viewType arguments.ViewType,
+	opType backend.OperationType,
 	args *arguments.Operation,
 	autoApprove bool,
 ) (*backend.Operation, tfdiags.Diagnostics) {
@@ -163,6 +165,7 @@ func (c *StartSessionCommand) OperationRequest(
 
 	// Build the operation
 	opReq := c.Operation(be, viewType)
+	opReq.Type = opType
 	opReq.AutoApprove = autoApprove
 	opReq.ConfigDir = "."
 	opReq.PlanMode = args.PlanMode
@@ -170,7 +173,6 @@ func (c *StartSessionCommand) OperationRequest(
 	opReq.PlanRefresh = args.Refresh
 	opReq.Targets = args.Targets
 	opReq.ForceReplace = args.ForceReplace
-	opReq.Type = backend.OperationTypeApply
 	opReq.View = view.Operation()
 	opReq.KeepAlive = c.KeepAlive
 	opReq.ProviderCache = c.ProviderCache
@@ -187,16 +189,21 @@ func (c *StartSessionCommand) OperationRequest(
 	return opReq, diags
 }
 
-func (c *StartSessionCommand) handleInput(be backend.Enhanced, args *arguments.StartSession, applyArgs *arguments.Apply) tfdiags.Diagnostics {
+func (c *StartSessionCommand) handleInput(
+	be backend.Enhanced,
+	args *arguments.StartSession,
+	opType backend.OperationType,
+	opArgs *arguments.Operation,
+) tfdiags.Diagnostics {
 	diags := tfdiags.Diagnostics{}
 
 	view := views.NewStartSession(args.ViewType, c.View)
 
 	// Build the operation request
-	opReq, opDiags := c.OperationRequest(be, view, args.ViewType, applyArgs.Operation, applyArgs.AutoApprove)
+	opReq, opDiags := c.OperationRequest(be, view, args.ViewType, opType, opArgs, true)
 	diags = diags.Append(opDiags)
 
-	isDestroy := applyArgs.Operation.PlanMode == plans.DestroyMode
+	isDestroy := opArgs.PlanMode == plans.DestroyMode
 	// TODO: if destroy _and_ `useTests` then we should only destroy test resources
 	if len(opReq.Targets) == 0 && !isDestroy {
 		targets, targetsDiags := c.Meta.loadTargets(".")
@@ -274,7 +281,25 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 			}
 
 			applyArgs.Operation.Refresh = needsRefresh
-			d = c.handleInput(be, args, applyArgs)
+			d = c.handleInput(be, args, backend.OperationTypeApply, applyArgs.Operation)
+			needsRefresh = false
+			if d.HasErrors() {
+				view.Diagnostics(d)
+				continue
+			}
+		case "plan":
+			common, rawArgs := arguments.ParseView(parts[1:])
+			c.Meta.useTests = common.UseTests
+			c.Meta.modules = common.Modules
+
+			planArgs, d := arguments.ParsePlan(rawArgs)
+			if d.HasErrors() {
+				view.Diagnostics(d)
+				continue
+			}
+
+			planArgs.Operation.Refresh = needsRefresh
+			d = c.handleInput(be, args, backend.OperationTypePlan, planArgs.Operation)
 			needsRefresh = false
 			if d.HasErrors() {
 				view.Diagnostics(d)
@@ -283,16 +308,33 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 		case "reload-config":
 			// Dump the config cache
 			c.configLoader = nil
-		case "get-state":
-			if c.StateManager == nil {
-				view.Diagnostics(tfdiags.Diagnostics{}.Append(fmt.Errorf("No state manager available")))
+		case "set-state":
+			filename := parts[1]
+			data, err := os.ReadFile(filename)
+			if err != nil {
+				view.Diagnostics(tfdiags.Diagnostics{}.Append(err))
 				continue
 			}
 
-			s := c.StateManager.State()
-			f := statefile.New(s, "", 0)
+			stateFile, err := statefile.Read(bytes.NewReader(data))
+			if err != nil {
+				view.Diagnostics(tfdiags.Diagnostics{}.Append(err))
+				continue
+			}
+
+			err = statemgr.Import(stateFile, c.StateManager, false)
+			if err != nil {
+				view.Diagnostics(tfdiags.Diagnostics{}.Append(err))
+				continue
+			}
+		case "get-state":
+			stateFile := statemgr.Export(c.StateManager)
+			if stateFile == nil {
+				stateFile = &statefile.File{}
+			}
+
 			var buf bytes.Buffer
-			err := statefile.Write(f, &buf)
+			err := statefile.Write(stateFile, &buf)
 			if err != nil {
 				view.Diagnostics(tfdiags.Diagnostics{}.Append(err))
 				continue

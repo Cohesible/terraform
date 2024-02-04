@@ -1475,17 +1475,18 @@ func (n *NodeAbstractResourceInstance) readDataSource(ctx EvalContext, configVal
 		return newVal, diags
 	}
 
+	// Unmark before sending to provider, will re-mark before returning
+	var pvm []cty.PathValueMarks
+	configVal, pvm = configVal.UnmarkDeepWithPaths()
+
 	// TODO: check err?
+	// TODO: compare marks too, otherwise
 	if n.cache != nil {
 		cachedVal, _ := n.cache.GetCachedValue(n.Addr.ConfigResource(), configVal)
 		if cachedVal != nil {
 			return *cachedVal, nil
 		}
 	}
-
-	// Unmark before sending to provider, will re-mark before returning
-	var pvm []cty.PathValueMarks
-	configVal, pvm = configVal.UnmarkDeepWithPaths()
 
 	log.Printf("[TRACE] readDataSource: Re-validating config for %s", n.Addr)
 	validateResp := provider.ValidateDataResourceConfig(

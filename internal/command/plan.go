@@ -29,6 +29,7 @@ func (c *PlanCommand) Run(rawArgs []string) int {
 	// migrated to views.
 	c.Meta.color = !common.NoColor
 	c.Meta.Color = c.Meta.color
+	c.Meta.modules = common.Modules
 
 	// Parse and validate flags
 	args, diags := arguments.ParsePlan(rawArgs)
@@ -80,6 +81,12 @@ func (c *PlanCommand) Run(rawArgs []string) int {
 	if diags.HasErrors() {
 		view.Diagnostics(diags)
 		return 1
+	}
+
+	if len(opReq.Targets) == 0 {
+		targets, targetsDiags := c.Meta.loadTargets(".")
+		diags = diags.Append(targetsDiags)
+		opReq.Targets = targets
 	}
 
 	// Collect variable value and add them to the operation request
