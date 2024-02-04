@@ -59,7 +59,13 @@ type Allocator struct {
 func createAllocator(c *configs.Config) (*Allocator, error) {
 	configBlock := c.Module.Allocator
 	if configBlock == nil {
-		return nil, fmt.Errorf("Missing allocator block")
+		allocator := &Allocator{
+			Config:             c,
+			providerMetaValues: map[tfaddr.Provider]*cty.Value{},
+			schemas:            map[addrs.Resource]cachedSchema{},
+		}
+
+		return allocator, nil
 	}
 
 	allocator := &Allocator{
