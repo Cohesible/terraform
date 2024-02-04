@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform/internal/backend"
 	"github.com/hashicorp/terraform/internal/command/arguments"
 	"github.com/hashicorp/terraform/internal/command/views"
+	"github.com/hashicorp/terraform/internal/configs"
 	"github.com/hashicorp/terraform/internal/plans"
 	"github.com/hashicorp/terraform/internal/states/statefile"
 	"github.com/hashicorp/terraform/internal/states/statemgr"
@@ -27,6 +28,7 @@ type StartSessionCommand struct {
 	Meta
 	ProviderCache *terraform.ProviderCache
 	StateManager  statemgr.Full
+	EvalContext   terraform.EvalContext
 	Cache         *terraform.Cache
 }
 
@@ -254,6 +256,16 @@ func (c *StartSessionCommand) handleInput(
 	return diags
 }
 
+func (c *StartSessionCommand) getEvalContext(tfCtx *terraform.Context, config *configs.Config) terraform.EvalContext {
+	if c.EvalContext == nil {
+		s := c.StateManager.State()
+		walker := tfCtx.GraphWalker(s, config)
+		c.EvalContext = walker.EvalContext().WithPath(addrs.RootModuleInstance)
+	}
+
+	return c.EvalContext
+}
+
 func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enhanced, args *arguments.StartSession) int {
 	needsRefresh := args.Operation.Refresh
 	scanner := bufio.NewScanner(os.Stdin)
@@ -308,6 +320,7 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 		case "reload-config":
 			// Dump the config cache
 			c.configLoader = nil
+			c.EvalContext = nil
 		case "set-state":
 			filename := parts[1]
 			data, err := os.ReadFile(filename)
@@ -409,35 +422,37 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 			sm.WriteState(s)
 			sm.RefreshState()
 		case "get-refs":
-			rAddr, d := addrs.ParseAbsResourceStr(parts[1])
-			if d.HasErrors() {
-				view.Diagnostics(d)
-				continue
-			}
-
 			config, d := c.loadConfig(".")
 			if d.HasErrors() {
 				view.Diagnostics(d)
 				continue
 			}
 
-			sm, _ := be.StateMgr(backend.DefaultStateName)
-			err := sm.RefreshState()
-			if err != nil {
-				view.Diagnostics(tfdiags.Diagnostics{}.Append(err))
-				continue
-			}
-			s := sm.State()
-			walker := tfCtx.GraphWalker(s, config)
+			ctx := c.getEvalContext(tfCtx, config)
 			a := terraform.GetAllocator(config)
-			ctx := walker.EvalContext().WithPath(addrs.RootModuleInstance)
-			refs, d := a.GetRefs(ctx, rAddr.Resource)
+
+			getRefs := func() ([]*addrs.Reference, tfdiags.Diagnostics) {
+				if strings.HasPrefix(parts[1], "local.") {
+					name := strings.TrimPrefix(parts[1], "local.")
+					return a.GetLocalRefs(ctx, addrs.LocalValue{Name: name})
+				}
+
+				rAddr, d := addrs.ParseAbsResourceStr(parts[1])
+				if d.HasErrors() {
+					view.Diagnostics(d)
+					return nil, d
+				}
+
+				return a.GetRefs(ctx, rAddr.Resource)
+			}
+
+			refs, d := getRefs()
 			if d.HasErrors() {
 				view.Diagnostics(d)
 				continue
 			}
 
-			err = view.PrintRefs(refs)
+			err := view.PrintRefs(refs)
 			if err != nil {
 				view.Diagnostics(tfdiags.Diagnostics{}.Append(err))
 				continue

@@ -131,6 +131,17 @@ func (a *Allocator) GetRefs(ctx EvalContext, addr addrs.Resource) ([]*addrs.Refe
 	return lang.ReferencesInBlock(rConfig.Config, schema)
 }
 
+func (a *Allocator) GetLocalRefs(ctx EvalContext, addr addrs.LocalValue) ([]*addrs.Reference, tfdiags.Diagnostics) {
+	var diags tfdiags.Diagnostics
+
+	lConfig := a.Config.Module.Locals[addr.Name]
+	if lConfig == nil {
+		return nil, diags.Append(fmt.Errorf("missing config %s", addr))
+	}
+
+	return lang.ReferencesInExpr(lConfig.Expr)
+}
+
 type ResolveResult struct {
 	Provider      providers.Interface
 	ProviderAddr  addrs.AbsProviderConfig
@@ -1753,7 +1764,7 @@ func GetAllocator(config *configs.Config) *Allocator {
 		panic(err)
 	}
 
-	allocator = a
+	// allocator = a
 
 	return a
 }
