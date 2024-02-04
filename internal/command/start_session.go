@@ -30,6 +30,7 @@ type StartSessionCommand struct {
 	StateManager  statemgr.Full
 	EvalContext   terraform.EvalContext
 	Cache         *terraform.Cache
+	Config        *configs.Config
 }
 
 func (c *StartSessionCommand) Run(rawArgs []string) int {
@@ -266,6 +267,16 @@ func (c *StartSessionCommand) getEvalContext(tfCtx *terraform.Context, config *c
 	return c.EvalContext
 }
 
+func (c *StartSessionCommand) getConfig() (*configs.Config, tfdiags.Diagnostics) {
+	if c.Config == nil {
+		config, d := c.loadConfig(".")
+		c.Config = config
+		return config, d
+	}
+
+	return c.Config, nil
+}
+
 func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enhanced, args *arguments.StartSession) int {
 	needsRefresh := args.Operation.Refresh
 	scanner := bufio.NewScanner(os.Stdin)
@@ -321,6 +332,7 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 			// Dump the config cache
 			c.configLoader = nil
 			c.EvalContext = nil
+			c.Config = nil
 		case "set-state":
 			filename := parts[1]
 			data, err := os.ReadFile(filename)
@@ -389,7 +401,7 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 				continue
 			}
 
-			config, d := c.loadConfig(".")
+			config, d := c.getConfig()
 			if d.HasErrors() {
 				view.Diagnostics(d)
 				continue
@@ -422,7 +434,7 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 			sm.WriteState(s)
 			sm.RefreshState()
 		case "get-refs":
-			config, d := c.loadConfig(".")
+			config, d := c.getConfig()
 			if d.HasErrors() {
 				view.Diagnostics(d)
 				continue
