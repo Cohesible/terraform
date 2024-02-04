@@ -443,13 +443,13 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 			ctx := c.getEvalContext(tfCtx, config)
 			a := terraform.GetAllocator(config)
 
-			getRefs := func() ([]*addrs.Reference, tfdiags.Diagnostics) {
-				if strings.HasPrefix(parts[1], "local.") {
-					name := strings.TrimPrefix(parts[1], "local.")
+			getRefs := func(id string) ([]*addrs.Reference, tfdiags.Diagnostics) {
+				if strings.HasPrefix(id, "local.") {
+					name := strings.TrimPrefix(id, "local.")
 					return a.GetLocalRefs(ctx, addrs.LocalValue{Name: name})
 				}
 
-				rAddr, d := addrs.ParseAbsResourceStr(parts[1])
+				rAddr, d := addrs.ParseAbsResourceStr(id)
 				if d.HasErrors() {
 					view.Diagnostics(d)
 					return nil, d
@@ -458,10 +458,14 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 				return a.GetRefs(ctx, rAddr.Resource)
 			}
 
-			refs, d := getRefs()
-			if d.HasErrors() {
-				view.Diagnostics(d)
-				continue
+			refs := map[string][]*addrs.Reference{}
+			for _, id := range parts[1:] {
+				r, d := getRefs(id)
+				if d.HasErrors() {
+					view.Diagnostics(d)
+					break
+				}
+				refs[id] = r
 			}
 
 			err := view.PrintRefs(refs)

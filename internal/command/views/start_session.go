@@ -30,7 +30,7 @@ type StartSession interface {
 
 	Ready()
 
-	PrintRefs(refs []*addrs.Reference) error
+	PrintRefs(refs map[string][]*addrs.Reference) error
 	PrintData(data []byte)
 }
 
@@ -119,9 +119,12 @@ func (v *StartSessionHuman) PrintData(data []byte) {
 	v.view.streams.Print(string(data))
 }
 
-func (v *StartSessionHuman) PrintRefs(refs []*addrs.Reference) error {
-	for _, ref := range refs {
-		v.view.streams.Println(ref.DisplayString())
+func (v *StartSessionHuman) PrintRefs(refsMap map[string][]*addrs.Reference) error {
+	for k, refs := range refsMap {
+		v.view.streams.Println(k)
+		for _, ref := range refs {
+			v.view.streams.Println(ref.DisplayString())
+		}
 	}
 	return nil
 }
@@ -192,9 +195,10 @@ type expression struct {
 	Value jsonencoding.RawMessage `json:"value"`
 }
 
-func (v *StartSessionJSON) PrintRefs(refs []*addrs.Reference) error {
+func serializeRefsSlice(refs []*addrs.Reference) ([]reference, tfdiags.Diagnostics) {
 	diags := tfdiags.Diagnostics{}
 	output := make([]reference, 0)
+
 	for _, ref := range refs {
 		expressions := make([]expression, 0)
 
@@ -232,6 +236,22 @@ func (v *StartSessionJSON) PrintRefs(refs []*addrs.Reference) error {
 				Expressions: expressions,
 			})
 		}
+	}
+
+	return output, diags
+}
+
+func (v *StartSessionJSON) PrintRefs(refs map[string][]*addrs.Reference) error {
+	diags := tfdiags.Diagnostics{}
+	output := map[string][]reference{}
+	for k, v := range refs {
+		s, d := serializeRefsSlice(v)
+		diags = diags.Append(d)
+		output[k] = s
+	}
+
+	if diags.HasErrors() {
+		return diags.Err()
 	}
 
 	bytes, err := jsonencoding.Marshal(output)
