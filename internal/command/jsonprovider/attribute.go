@@ -36,6 +36,14 @@ func marshalStringKind(sk configschema.StringKind) string {
 	}
 }
 
+func unmarshalStringKind(sk string) configschema.StringKind {
+	switch sk {
+	case "markdown":
+		return configschema.StringMarkdown
+	}
+	return configschema.StringPlain
+}
+
 func marshalAttribute(attr *configschema.Attribute) *Attribute {
 	ret := &Attribute{
 		Description:     attr.Description,
@@ -64,6 +72,38 @@ func marshalAttribute(attr *configschema.Attribute) *Attribute {
 		}
 		nestedTy.Attributes = attrs
 		ret.AttributeNestedType = &nestedTy
+	}
+
+	return ret
+}
+
+func unmarshalAttribute(attr *Attribute) *configschema.Attribute {
+	ret := &configschema.Attribute{
+		Description:     attr.Description,
+		DescriptionKind: unmarshalStringKind(attr.DescriptionKind),
+		Required:        attr.Required,
+		Optional:        attr.Optional,
+		Computed:        attr.Computed,
+		Sensitive:       attr.Sensitive,
+		Deprecated:      attr.Deprecated,
+	}
+
+	if attr.AttributeType != nil {
+		var attrTy cty.Type
+		attrTy.UnmarshalJSON(attr.AttributeType) // XXX: check errors!
+		ret.Type = attrTy
+	}
+
+	if attr.AttributeNestedType != nil {
+		nestedTy := configschema.Object{
+			Nesting: stringToNestingMode(attr.AttributeNestedType.NestingMode),
+		}
+		attrs := make(map[string]*configschema.Attribute, len(attr.AttributeNestedType.Attributes))
+		for k, attr := range attr.AttributeNestedType.Attributes {
+			attrs[k] = unmarshalAttribute(attr)
+		}
+		nestedTy.Attributes = attrs
+		ret.NestedType = &nestedTy
 	}
 
 	return ret

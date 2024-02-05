@@ -7004,7 +7004,10 @@ func runTestCases(t *testing.T, testCases map[string]testCase) {
 				return
 			}
 
-			jsonschemas := jsonprovider.MarshalForRenderer(tfschemas)
+			jsonschemas := jsonprovider.MarshalForRenderer(&jsonprovider.Schemas{
+				Providers:    tfschemas.Providers,
+				Provisioners: tfschemas.Provisioners,
+			})
 			change := structured.FromJsonChange(jsonchanges[0].Change, attribute_path.AlwaysMatcher())
 			renderer := Renderer{Colorize: color}
 			diff := diff{

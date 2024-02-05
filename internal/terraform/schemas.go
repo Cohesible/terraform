@@ -134,6 +134,7 @@ func loadProviderSchemas(schemas map[addrs.Provider]*providers.Schemas, config *
 		}
 
 		schemas[fqn] = schema
+		log.Printf("[TRACE] LoadSchemas: finished retrieving schema for provider type %q", name)
 	}
 
 	fqns := make(map[tfaddr.Provider]bool)

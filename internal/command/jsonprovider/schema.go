@@ -25,6 +25,14 @@ func marshalSchema(block *configschema.Block) *Schema {
 	return &ret
 }
 
+func unmarshalSchema(schema *Schema) (*configschema.Block, uint64) {
+	if schema.Block == nil {
+		return &configschema.Block{}, schema.Version
+	}
+
+	return unmarshalBlock(schema.Block), schema.Version
+}
+
 func marshalSchemas(blocks map[string]*configschema.Block, rVersions map[string]uint64) map[string]*Schema {
 	if blocks == nil {
 		return map[string]*Schema{}
@@ -38,4 +46,15 @@ func marshalSchemas(blocks map[string]*configschema.Block, rVersions map[string]
 		}
 	}
 	return ret
+}
+
+func unmarshalSchemas(schemas map[string]*Schema) (map[string]*configschema.Block, map[string]uint64) {
+	blocks := make(map[string]*configschema.Block, len(schemas))
+	rVersions := make(map[string]uint64, len(schemas))
+	for k, v := range schemas {
+		block, version := unmarshalSchema(v)
+		blocks[k] = block
+		rVersions[k] = version
+	}
+	return blocks, rVersions
 }

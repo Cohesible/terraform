@@ -11,12 +11,12 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	"github.com/hashicorp/terraform/internal/configs/configschema"
-	"github.com/hashicorp/terraform/internal/terraform"
+	"github.com/hashicorp/terraform/internal/providers"
 )
 
 func TestMarshalProvider(t *testing.T) {
 	tests := []struct {
-		Input *terraform.ProviderSchema
+		Input *providers.Schemas
 		Want  *Provider
 	}{
 		{
@@ -151,8 +151,8 @@ func TestMarshalProvider(t *testing.T) {
 	}
 }
 
-func testProvider() *terraform.ProviderSchema {
-	return &terraform.ProviderSchema{
+func testProvider() *providers.Schemas {
+	return &providers.Schemas{
 		Provider: &configschema.Block{
 			Attributes: map[string]*configschema.Attribute{
 				"region": {Type: cty.String, Required: true},

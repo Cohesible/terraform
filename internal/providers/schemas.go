@@ -24,12 +24,12 @@ import (
 // package totally encapsulate the unmarshalling and include this as part of
 // providers.GetProviderSchemaResponse.
 type Schemas struct {
-	Provider      *configschema.Block
-	ProviderMeta  *configschema.Block
-	ResourceTypes map[string]*configschema.Block
-	DataSources   map[string]*configschema.Block
+	Provider      *configschema.Block            `json:"provider"`
+	ProviderMeta  *configschema.Block            `json:"provider_meta,omitempty"`
+	ResourceTypes map[string]*configschema.Block `json:"resources,omitempty"`
+	DataSources   map[string]*configschema.Block `json:"data_sources,omitempty"`
 
-	ResourceTypeSchemaVersions map[string]uint64
+	ResourceTypeSchemaVersions map[string]uint64 `json:"versions"`
 }
 
 // SchemaForResourceType attempts to find a schema for the given mode and type.

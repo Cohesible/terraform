@@ -35,6 +35,21 @@ func marshalBlockTypes(nestedBlock *configschema.NestedBlock) *BlockType {
 	return ret
 }
 
+func unmarshalBlockTypes(nestedBlock *BlockType) *configschema.NestedBlock {
+	if nestedBlock == nil {
+		return &configschema.NestedBlock{}
+	}
+
+	ret := &configschema.NestedBlock{
+		Block:    *unmarshalBlock(nestedBlock.Block),
+		MinItems: int(nestedBlock.MinItems),
+		MaxItems: int(nestedBlock.MaxItems),
+		Nesting:  stringToNestingMode(nestedBlock.NestingMode),
+	}
+
+	return ret
+}
+
 func marshalBlock(configBlock *configschema.Block) *Block {
 	if configBlock == nil {
 		return &Block{}
@@ -65,6 +80,36 @@ func marshalBlock(configBlock *configschema.Block) *Block {
 	return &ret
 }
 
+func unmarshalBlock(configBlock *Block) *configschema.Block {
+	if configBlock == nil {
+		return &configschema.Block{}
+	}
+
+	ret := configschema.Block{
+		Deprecated:      configBlock.Deprecated,
+		Description:     configBlock.Description,
+		DescriptionKind: unmarshalStringKind(configBlock.DescriptionKind),
+	}
+
+	if len(configBlock.Attributes) > 0 {
+		attrs := make(map[string]*configschema.Attribute, len(configBlock.Attributes))
+		for k, attr := range configBlock.Attributes {
+			attrs[k] = unmarshalAttribute(attr)
+		}
+		ret.Attributes = attrs
+	}
+
+	if len(configBlock.BlockTypes) > 0 {
+		blockTypes := make(map[string]*configschema.NestedBlock, len(configBlock.BlockTypes))
+		for k, bt := range configBlock.BlockTypes {
+			blockTypes[k] = unmarshalBlockTypes(bt)
+		}
+		ret.BlockTypes = blockTypes
+	}
+
+	return &ret
+}
+
 func nestingModeString(mode configschema.NestingMode) string {
 	switch mode {
 	case configschema.NestingSingle:
@@ -79,5 +124,22 @@ func nestingModeString(mode configschema.NestingMode) string {
 		return "map"
 	default:
 		return "invalid"
+	}
+}
+
+func stringToNestingMode(mode string) configschema.NestingMode {
+	switch mode {
+	case "single":
+		return configschema.NestingSingle
+	case "group":
+		return configschema.NestingGroup
+	case "list":
+		return configschema.NestingList
+	case "set":
+		return configschema.NestingSet
+	case "map":
+		return configschema.NestingMap
+	default:
+		panic("invalid") // XXX
 	}
 }

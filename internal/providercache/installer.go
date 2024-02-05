@@ -5,8 +5,13 @@ package providercache
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -17,6 +22,7 @@ import (
 	copydir "github.com/hashicorp/terraform/internal/copy"
 	"github.com/hashicorp/terraform/internal/depsfile"
 	"github.com/hashicorp/terraform/internal/getproviders"
+	"github.com/hashicorp/terraform/internal/providers"
 )
 
 // Installer is the main type in this package, representing a provider installer
@@ -590,6 +596,69 @@ func (i *Installer) InstallProvider(ctx context.Context, provider tfaddr.Provide
 	i.locks.SetProvider(provider, version, constraints, append(preferredHashes, newHashes...))
 
 	return i.locks, nil
+}
+
+func (i *Installer) getProviderHash(addr addrs.Provider) string {
+	l := i.locks.Provider(addr)
+	if l == nil {
+		return addr.String()
+	}
+
+	hashes := l.PreferredHashes()
+	if len(hashes) == 0 {
+		return addr.String()
+	}
+
+	val := hashes[0]
+	var b []byte
+	if val.Scheme() == getproviders.HashScheme1 {
+		d, _ := base64.StdEncoding.DecodeString(val.Value())
+		b = d
+	} else {
+		d, _ := hex.DecodeString(val.Value())
+		b = d
+	}
+
+	return hex.EncodeToString(b)
+}
+
+func (i *Installer) getSchemaCacheDir() string {
+	if i.globalCacheDir != nil {
+		return filepath.Join(i.globalCacheDir.baseDir, "schemas")
+	}
+
+	return filepath.Join(i.targetDir.baseDir, "schemas")
+}
+
+func (i *Installer) GetCachedSchema(addr addrs.Provider) *providers.Schemas {
+	filename := filepath.Join(i.getSchemaCacheDir(), i.getProviderHash(addr))
+	buf, err := os.ReadFile(filename)
+	if err != nil {
+		return nil
+	}
+
+	var p providers.Schemas
+	err = json.Unmarshal(buf, &p)
+	if err != nil {
+		return nil
+	}
+
+	return &p
+}
+
+func (i *Installer) SetCachedSchema(addr addrs.Provider, schema *providers.Schemas) error {
+	filename := filepath.Join(i.getSchemaCacheDir(), i.getProviderHash(addr))
+	err := os.MkdirAll(filepath.Dir(filename), 0755)
+	if err != nil {
+		return err
+	}
+
+	buf, err := json.Marshal(schema)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filename, buf, 0644)
 }
 
 // InstallMode customizes the details of how an install operation treats

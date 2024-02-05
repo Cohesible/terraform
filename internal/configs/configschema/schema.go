@@ -26,47 +26,47 @@ const (
 type Block struct {
 	// Attributes describes any attributes that may appear directly inside
 	// the block.
-	Attributes map[string]*Attribute
+	Attributes map[string]*Attribute `json:"attributes"`
 
 	// BlockTypes describes any nested block types that may appear directly
 	// inside the block.
-	BlockTypes map[string]*NestedBlock
+	BlockTypes map[string]*NestedBlock `json:"block_types,omitempty"`
 
-	Description     string
-	DescriptionKind StringKind
+	Description     string     `json:"description"`
+	DescriptionKind StringKind `json:"description_kind,omitempty"`
 
-	Deprecated bool
+	Deprecated bool `json:"deprecated,omitempty"`
 }
 
 // Attribute represents a configuration attribute, within a block.
 type Attribute struct {
 	// Type is a type specification that the attribute's value must conform to.
 	// It conflicts with NestedType.
-	Type cty.Type
+	Type cty.Type `json:"type,omitempty"`
 
 	// NestedType indicates that the attribute is a NestedBlock-style object.
 	// This field conflicts with Type.
-	NestedType *Object
+	NestedType *Object `json:"nested_type,omitempty"`
 
 	// Description is an English-language description of the purpose and
 	// usage of the attribute. A description should be concise and use only
 	// one or two sentences, leaving full definition to longer-form
 	// documentation defined elsewhere.
-	Description     string
-	DescriptionKind StringKind
+	Description     string     `json:"description"`
+	DescriptionKind StringKind `json:"description_kind,omitempty"`
 
 	// Required, if set to true, specifies that an omitted or null value is
 	// not permitted.
-	Required bool
+	Required bool `json:"required,omitempty"`
 
 	// Optional, if set to true, specifies that an omitted or null value is
 	// permitted. This field conflicts with Required.
-	Optional bool
+	Optional bool `json:"optional,omitempty"`
 
 	// Computed, if set to true, specifies that the value comes from the
 	// provider rather than from configuration. If combined with Optional,
 	// then the config may optionally provide an overridden value.
-	Computed bool
+	Computed bool `json:"computed,omitempty"`
 
 	// Sensitive, if set to true, indicates that an attribute may contain
 	// sensitive information.
@@ -75,21 +75,21 @@ type Attribute struct {
 	// encouraged to set it where appropriate so that it may be used in the
 	// future to help Terraform mask sensitive information. (Terraform
 	// currently achieves this in a limited sense via other mechanisms.)
-	Sensitive bool
+	Sensitive bool `json:"sensitive,omitempty"`
 
-	Deprecated bool
+	Deprecated bool `json:"deprecated,omitempty"`
 }
 
 // Object represents the embedding of a structural object inside an Attribute.
 type Object struct {
 	// Attributes describes the nested attributes which may appear inside the
 	// Object.
-	Attributes map[string]*Attribute
+	Attributes map[string]*Attribute `json:"attributes"`
 
 	// Nesting provides the nesting mode for this Object, which determines how
 	// many instances of the Object are allowed, how many labels it expects, and
 	// how the resulting data will be converted into a data structure.
-	Nesting NestingMode
+	Nesting NestingMode `json:"nesting"`
 }
 
 // NestedBlock represents the embedding of one block within another.
@@ -100,7 +100,7 @@ type NestedBlock struct {
 	// Nesting provides the nesting mode for the child block, which determines
 	// how many instances of the block are allowed, how many labels it expects,
 	// and how the resulting data will be converted into a data structure.
-	Nesting NestingMode
+	Nesting NestingMode `json:"nesting"`
 
 	// MinItems and MaxItems set, for the NestingList and NestingSet nesting
 	// modes, lower and upper limits on the number of child blocks allowed
@@ -111,7 +111,8 @@ type NestedBlock struct {
 	//
 	// These fields are ignored for other nesting modes and must both be left
 	// at zero.
-	MinItems, MaxItems int
+	MinItems int `json:"min_items,omitempty"`
+	MaxItems int `json:"max_items,omitempty"`
 }
 
 // NestingMode is an enumeration of modes for nesting blocks inside other

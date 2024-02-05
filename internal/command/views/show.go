@@ -63,8 +63,11 @@ func (v *ShowHuman) Display(config *configs.Config, plan *plans.Plan, stateFile 
 			OutputChanges:         outputs,
 			ResourceChanges:       changed,
 			ResourceDrift:         drift,
-			ProviderSchemas:       jsonprovider.MarshalForRenderer(schemas),
-			RelevantAttributes:    attrs,
+			ProviderSchemas: jsonprovider.MarshalForRenderer(&jsonprovider.Schemas{
+				Providers:    schemas.Providers,
+				Provisioners: schemas.Provisioners,
+			}),
+			RelevantAttributes: attrs,
 		}
 
 		var opts []jsonformat.PlanRendererOpt
@@ -93,7 +96,10 @@ func (v *ShowHuman) Display(config *configs.Config, plan *plans.Plan, stateFile 
 			ProviderFormatVersion: jsonprovider.FormatVersion,
 			RootModule:            root,
 			RootModuleOutputs:     outputs,
-			ProviderSchemas:       jsonprovider.MarshalForRenderer(schemas),
+			ProviderSchemas: jsonprovider.MarshalForRenderer(&jsonprovider.Schemas{
+				Providers:    schemas.Providers,
+				Provisioners: schemas.Provisioners,
+			}),
 		}
 
 		renderer.RenderHumanState(jstate)

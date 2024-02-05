@@ -27,6 +27,7 @@ type CachedProvider struct {
 
 type ProviderCache struct {
 	mu        sync.RWMutex
+	schemas   map[addrs.Provider]*ProviderSchema
 	providers map[string]*CachedProvider
 }
 
@@ -45,7 +46,6 @@ type contextPlugins struct {
 	// their schemas in various different spots. We use schemas for many
 	// purposes in Terraform, so there isn't a single choke point where
 	// it makes sense to preload all of them.
-	providerSchemas    map[addrs.Provider]*ProviderSchema
 	provisionerSchemas map[string]*configschema.Block
 	schemasLock        sync.RWMutex
 	providerLocks      map[addrs.Provider]*sync.Mutex
@@ -74,8 +74,11 @@ func newContextPlugins(
 }
 
 func (cp *contextPlugins) init() {
-	cp.ProviderCache = &ProviderCache{mu: sync.RWMutex{}, providers: map[string]*CachedProvider{}}
-	cp.providerSchemas = make(map[addrs.Provider]*ProviderSchema, len(cp.providerFactories))
+	cp.ProviderCache = &ProviderCache{
+		mu:        sync.RWMutex{},
+		schemas:   map[addrs.Provider]*providers.Schemas{},
+		providers: map[string]*CachedProvider{},
+	}
 	cp.provisionerSchemas = make(map[string]*configschema.Block, len(cp.provisionerFactories))
 	cp.providerLocks = make(map[addrs.Provider]*sync.Mutex, len(cp.providerFactories))
 	// cp.schemaLocks = make(map[addrs.Provider]*sync.Mutex, len(cp.providerFactories))
@@ -163,9 +166,22 @@ func (cp *contextPlugins) NewProvisionerInstance(typ string) (provisioners.Inter
 
 func (cp *contextPlugins) getSchema(addr addrs.Provider) (*ProviderSchema, bool) {
 	cp.schemasLock.RLock()
-	defer cp.schemasLock.RUnlock()
-	schema, ok := cp.providerSchemas[addr]
-	return schema, ok
+	schema, ok := cp.ProviderCache.schemas[addr]
+	cp.schemasLock.RUnlock()
+
+	if ok {
+		return schema, ok
+	}
+
+	cachedSchema := cp.installer.GetCachedSchema(addr)
+	if cachedSchema != nil {
+		cp.schemasLock.Lock()
+		defer cp.schemasLock.Unlock()
+		cp.ProviderCache.schemas[addr] = cachedSchema
+		return cachedSchema, true
+	}
+
+	return nil, false
 }
 
 // ProviderSchema uses a temporary instance of the provider with the given
@@ -199,7 +215,6 @@ func (cp *contextPlugins) ProviderSchema(addr addrs.Provider) (*ProviderSchema, 
 		return schema, nil
 	}
 
-	// We don't really need to cache this. It's very fast.
 	resp := provider.GetProviderSchema()
 	if resp.Diagnostics.HasErrors() {
 		return nil, fmt.Errorf("failed to retrieve schema from provider %q: %s", addr, resp.Diagnostics.Err())
@@ -249,8 +264,10 @@ func (cp *contextPlugins) ProviderSchema(addr addrs.Provider) (*ProviderSchema, 
 	}
 
 	cp.schemasLock.Lock()
-	cp.providerSchemas[addr] = s
+	cp.ProviderCache.schemas[addr] = s
 	cp.schemasLock.Unlock()
+
+	cp.installer.SetCachedSchema(addr, s)
 
 	return s, nil
 }

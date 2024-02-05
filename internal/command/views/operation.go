@@ -110,8 +110,11 @@ func (v *OperationHuman) Plan(plan *plans.Plan, schemas *terraform.Schemas) {
 		OutputChanges:         outputs,
 		ResourceChanges:       changed,
 		ResourceDrift:         drift,
-		ProviderSchemas:       jsonprovider.MarshalForRenderer(schemas),
-		RelevantAttributes:    attrs,
+		ProviderSchemas: jsonprovider.MarshalForRenderer(&jsonprovider.Schemas{
+			Providers:    schemas.Providers,
+			Provisioners: schemas.Provisioners,
+		}),
+		RelevantAttributes: attrs,
 	}
 
 	// Side load some data that we can't extract from the JSON plan.
