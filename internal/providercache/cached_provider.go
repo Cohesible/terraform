@@ -28,6 +28,8 @@ type CachedProvider struct {
 	// both slashes and backslashes as long as the separators are consistent
 	// within a particular path string.
 	PackageDir string
+
+	cache *getproviders.HashCache
 }
 
 // PackageLocation returns the package directory given in the PackageDir field
@@ -47,7 +49,7 @@ func (cp *CachedProvider) PackageLocation() getproviders.PackageLocalDir {
 // current default, call that version's corresponding method (e.g. HashV1)
 // directly instead.
 func (cp *CachedProvider) Hash() (getproviders.Hash, error) {
-	return getproviders.PackageHash(cp.PackageLocation())
+	return getproviders.PackageHash(cp.PackageLocation(), cp.cache)
 }
 
 // MatchesHash returns true if the package on disk matches the given hash,
@@ -58,7 +60,7 @@ func (cp *CachedProvider) Hash() (getproviders.Hash, error) {
 // MatchesHash may accept hashes in a number of different formats. Over time
 // the set of supported formats may grow and shrink.
 func (cp *CachedProvider) MatchesHash(want getproviders.Hash) (bool, error) {
-	return getproviders.PackageMatchesHash(cp.PackageLocation(), want)
+	return getproviders.PackageMatchesHash(cp.PackageLocation(), want, cp.cache)
 }
 
 // MatchesAnyHash returns true if the package on disk matches the given hash,
@@ -68,7 +70,7 @@ func (cp *CachedProvider) MatchesHash(want getproviders.Hash) (bool, error) {
 // Unlike the singular MatchesHash, MatchesAnyHash considers unsupported hash
 // formats as successfully non-matching, rather than returning an error.
 func (cp *CachedProvider) MatchesAnyHash(allowed []getproviders.Hash) (bool, error) {
-	return getproviders.PackageMatchesAnyHash(cp.PackageLocation(), allowed)
+	return getproviders.PackageMatchesAnyHash(cp.PackageLocation(), allowed, cp.cache)
 }
 
 // HashV1 computes a hash of the contents of the package directory associated
@@ -83,7 +85,7 @@ func (cp *CachedProvider) MatchesAnyHash(allowed []getproviders.Hash) (bool, err
 // HashV1 always begins with the prefix "h1:" so that callers can distinguish
 // the results of potentially multiple different hash algorithms in future.
 func (cp *CachedProvider) HashV1() (getproviders.Hash, error) {
-	return getproviders.PackageHashV1(cp.PackageLocation())
+	return getproviders.PackageHashV1(cp.PackageLocation(), cp.cache)
 }
 
 // ExecutableFile inspects the cached provider's unpacked package directory for

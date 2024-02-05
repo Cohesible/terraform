@@ -41,6 +41,8 @@ type Dir struct {
 	// explicitly defines using the same directory for multiple purposes
 	// as undefined behavior.
 	metaCache map[addrs.Provider][]CachedProvider
+
+	hashCache *getproviders.HashCache
 }
 
 // NewDir creates and returns a new Dir object that will read and write
@@ -131,6 +133,15 @@ func (d *Dir) ProviderLatestVersion(provider addrs.Provider) *CachedProvider {
 	return &entries[0]
 }
 
+func (d *Dir) getHashCache() *getproviders.HashCache {
+	if d.hashCache == nil {
+		c := getproviders.LoadHashCache(d.baseDir)
+		d.hashCache = c
+	}
+
+	return d.hashCache
+}
+
 func (d *Dir) fillMetaCache() error {
 	// For d.metaCache we consider nil to be different than a non-nil empty
 	// map, so we can distinguish between having scanned and got an empty
@@ -178,6 +189,7 @@ func (d *Dir) fillMetaCache() error {
 				Provider:   providerAddr,
 				Version:    meta.Version,
 				PackageDir: filepath.ToSlash(packageDir),
+				cache:      d.getHashCache(),
 			})
 		}
 	}

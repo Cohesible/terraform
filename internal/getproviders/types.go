@@ -199,6 +199,8 @@ type PackageMeta struct {
 	// This is likely appropriate only for packages that are already available
 	// on the local system.
 	Authentication PackageAuthentication
+
+	cache *HashCache
 }
 
 // LessThan returns true if the receiver should sort before the given other

@@ -241,7 +241,7 @@ func (a packageHashAuthentication) AuthenticatePackage(localLocation PackageLoca
 		return nil, fmt.Errorf("this version of Terraform does not support any of the checksum formats given for this provider")
 	}
 
-	matches, err := PackageMatchesAnyHash(localLocation, a.RequiredHashes)
+	matches, err := PackageMatchesAnyHash(localLocation, a.RequiredHashes, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify provider package checksums: %s", err)
 	}

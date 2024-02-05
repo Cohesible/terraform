@@ -24,6 +24,7 @@ import (
 // directory structure conventions.
 func SearchLocalDirectory(baseDir string) (map[addrs.Provider]PackageMetaList, error) {
 	ret := make(map[addrs.Provider]PackageMetaList)
+	hashCache := LoadHashCache(baseDir)
 
 	// We don't support symlinks at intermediate points inside the directory
 	// hierarchy because that could potentially cause our walk to get into
@@ -238,7 +239,7 @@ func SearchLocalDirectory(baseDir string) (map[addrs.Provider]PackageMetaList, e
 				// based on the standard naming scheme.
 				Filename: normFilename,                  // normalized filename, because this field says what it _should_ be called, not what it _is_ called
 				Location: PackageLocalArchive(fullPath), // non-normalized here, because this is the actual physical location
-
+				cache:    hashCache,
 				// TODO: Also populate the SHA256Sum field. Skipping that
 				// for now because our initial uses of this result --
 				// scanning already-installed providers in local directories,

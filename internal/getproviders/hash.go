@@ -5,11 +5,17 @@ package getproviders
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"golang.org/x/mod/sumdb/dirhash"
 )
@@ -163,8 +169,8 @@ func (hs HashScheme) New(value string) Hash {
 // PackageLocalDir and PackageLocalArchive, because it needs to access the
 // contents of the indicated package in order to compute the hash. If given
 // a non-local location this function will always return an error.
-func PackageHash(loc PackageLocation) (Hash, error) {
-	return PackageHashV1(loc)
+func PackageHash(loc PackageLocation, cache *HashCache) (Hash, error) {
+	return PackageHashV1(loc, cache)
 }
 
 // PackageMatchesHash returns true if the package at the given location matches
@@ -181,10 +187,10 @@ func PackageHash(loc PackageLocation) (Hash, error) {
 // PackageLocalDir and PackageLocalArchive, because it needs to access the
 // contents of the indicated package in order to compute the hash. If given
 // a non-local location this function will always return an error.
-func PackageMatchesHash(loc PackageLocation, want Hash) (bool, error) {
+func PackageMatchesHash(loc PackageLocation, want Hash, cache *HashCache) (bool, error) {
 	switch want.Scheme() {
 	case HashScheme1:
-		got, err := PackageHashV1(loc)
+		got, err := PackageHashV1(loc, cache)
 		if err != nil {
 			return false, err
 		}
@@ -216,7 +222,7 @@ func PackageMatchesHash(loc PackageLocation, want Hash) (bool, error) {
 // types PackageLocalDir and PackageLocalArchive, because it needs to access the
 // contents of the indicated package in order to compute the hash. If given
 // a non-local location this function will always return an error.
-func PackageMatchesAnyHash(loc PackageLocation, allowed []Hash) (bool, error) {
+func PackageMatchesAnyHash(loc PackageLocation, allowed []Hash, cache *HashCache) (bool, error) {
 	// It's likely that we'll have multiple hashes of the same scheme in
 	// the "allowed" set, in which case we'll avoid repeatedly re-reading the
 	// given package by caching its result for each of the two
@@ -227,7 +233,7 @@ func PackageMatchesAnyHash(loc PackageLocation, allowed []Hash) (bool, error) {
 		switch want.Scheme() {
 		case HashScheme1:
 			if v1Hash == NilHash {
-				got, err := PackageHashV1(loc)
+				got, err := PackageHashV1(loc, cache)
 				if err != nil {
 					return false, err
 				}
@@ -331,6 +337,132 @@ func HashLegacyZipSHAFromSHA(sum [sha256.Size]byte) Hash {
 	return HashSchemeZip.New(fmt.Sprintf("%x", sum[:]))
 }
 
+type cachedHash struct {
+	Mtime   int64  `json:"mtime"`
+	Encoded string `json:"encoded"`
+	// not used
+	LastChecked int64 `json:"lastChecked"`
+}
+
+// Used to reduce start-up time for developers
+// This should never be used in build environments
+type HashCache struct {
+	mu       sync.Mutex
+	location string
+	hashes   map[string]*cachedHash
+}
+
+func LoadHashCache(location string) *HashCache {
+	hashes := map[string]*cachedHash{}
+	c := &HashCache{
+		mu:       sync.Mutex{},
+		location: location,
+		hashes:   hashes,
+	}
+
+	b, err := os.ReadFile(filepath.Join(location, "hash-cache.json"))
+	if err != nil {
+		return c
+	}
+
+	json.Unmarshal(b, &c.hashes)
+
+	return c
+}
+
+func (c *HashCache) persist() error {
+	b, err := json.Marshal(c.hashes)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filepath.Join(c.location, "hash-cache.json"), b, 0644)
+}
+
+func (c *HashCache) getCachedHash(filename string) []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if val, ok := c.hashes[filename]; ok {
+		info, err := os.Stat(filename)
+		if err != nil {
+			delete(c.hashes, filename)
+			return nil
+		}
+
+		mtime := info.ModTime().UnixMilli()
+		if mtime != val.Mtime {
+			delete(c.hashes, filename)
+			return nil
+		}
+
+		b, err := base64.StdEncoding.DecodeString(val.Encoded)
+		if err != nil {
+			delete(c.hashes, filename)
+			return nil
+		}
+
+		return b
+	}
+
+	return nil
+}
+
+func (c *HashCache) setCachedHash(filename string, hash []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	info, err := os.Stat(filename)
+	if err != nil {
+		return err
+	}
+
+	mtime := info.ModTime().UnixMilli()
+	encoded := base64.StdEncoding.EncodeToString(hash)
+	c.hashes[filename] = &cachedHash{
+		Mtime:       mtime,
+		Encoded:     encoded,
+		LastChecked: time.Now().UnixMilli(),
+	}
+
+	return c.persist()
+}
+
+func (c *HashCache) getHashFunc(dir string) dirhash.Hash {
+	return func(files []string, open func(string) (io.ReadCloser, error)) (string, error) {
+		h := sha256.New()
+		files = append([]string(nil), files...)
+		sort.Strings(files)
+		for _, file := range files {
+			if strings.Contains(file, "\n") {
+				return "", errors.New("dirhash: filenames with newlines are not supported")
+			}
+
+			absFile := filepath.Join(dir, file)
+			cached := c.getCachedHash(absFile)
+			if cached != nil {
+				fmt.Fprintf(h, "%x  %s\n", cached, file)
+				continue
+			}
+
+			r, err := open(file)
+			if err != nil {
+				return "", err
+			}
+			hf := sha256.New()
+			_, err = io.Copy(hf, r)
+			r.Close()
+			if err != nil {
+				return "", err
+			}
+			b := hf.Sum(nil)
+			c.setCachedHash(absFile, b)
+			fmt.Fprintf(h, "%x  %s\n", b, file)
+		}
+		return "h1:" + base64.StdEncoding.EncodeToString(h.Sum(nil)), nil
+	}
+}
+
 // PackageHashV1 computes a hash of the contents of the package at the given
 // location using hash algorithm 1. The resulting Hash is guaranteed to have
 // the scheme HashScheme1.
@@ -349,7 +481,7 @@ func HashLegacyZipSHAFromSHA(sum [sha256.Size]byte) Hash {
 // PackageLocalDir and PackageLocalArchive, because it needs to access the
 // contents of the indicated package in order to compute the hash. If given
 // a non-local location this function will always return an error.
-func PackageHashV1(loc PackageLocation) (Hash, error) {
+func PackageHashV1(loc PackageLocation, cache *HashCache) (Hash, error) {
 	// Our HashV1 is really just the Go Modules hash version 1, which is
 	// sufficient for our needs and already well-used for identity of
 	// Go Modules distribution packages. It is also blocked from incompatible
@@ -379,7 +511,14 @@ func PackageHashV1(loc PackageLocation) (Hash, error) {
 
 		// The dirhash.HashDir result is already in our expected h1:...
 		// format, so we can just convert directly to Hash.
-		s, err := dirhash.HashDir(packageDir, "", dirhash.Hash1)
+		var hashFunc dirhash.Hash
+		if cache != nil {
+			hashFunc = cache.getHashFunc(packageDir)
+		} else {
+			hashFunc = dirhash.Hash1
+		}
+
+		s, err := dirhash.HashDir(packageDir, "", hashFunc)
 		return Hash(s), err
 
 	case PackageLocalArchive:
@@ -411,7 +550,7 @@ func PackageHashV1(loc PackageLocation) (Hash, error) {
 // contents of the indicated package in order to compute the hash. If given
 // a non-local location this function will always return an error.
 func (m PackageMeta) Hash() (Hash, error) {
-	return PackageHash(m.Location)
+	return PackageHash(m.Location, m.cache)
 }
 
 // MatchesHash returns true if the package at the location associated with
@@ -425,7 +564,7 @@ func (m PackageMeta) Hash() (Hash, error) {
 // contents of the indicated package in order to compute the hash. If given
 // a non-local location this function will always return an error.
 func (m PackageMeta) MatchesHash(want Hash) (bool, error) {
-	return PackageMatchesHash(m.Location, want)
+	return PackageMatchesHash(m.Location, want, m.cache)
 }
 
 // MatchesAnyHash returns true if the package at the location associated with
@@ -435,7 +574,7 @@ func (m PackageMeta) MatchesHash(want Hash) (bool, error) {
 // Unlike the signular MatchesHash, MatchesAnyHash considers an unsupported
 // hash format to be a successful non-match.
 func (m PackageMeta) MatchesAnyHash(acceptable []Hash) (bool, error) {
-	return PackageMatchesAnyHash(m.Location, acceptable)
+	return PackageMatchesAnyHash(m.Location, acceptable, m.cache)
 }
 
 // HashV1 computes a hash of the contents of the package at the location
@@ -450,5 +589,5 @@ func (m PackageMeta) MatchesAnyHash(acceptable []Hash) (bool, error) {
 // contents of the indicated package in order to compute the hash. If given
 // a non-local location this function will always return an error.
 func (m PackageMeta) HashV1() (Hash, error) {
-	return PackageHashV1(m.Location)
+	return PackageHashV1(m.Location, m.cache)
 }
