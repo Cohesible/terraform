@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -19,6 +18,7 @@ import (
 
 	tfaddr "github.com/hashicorp/terraform-registry-address"
 	"github.com/hashicorp/terraform/internal/addrs"
+	"github.com/hashicorp/terraform/internal/command/jsonprovider"
 	copydir "github.com/hashicorp/terraform/internal/copy"
 	"github.com/hashicorp/terraform/internal/depsfile"
 	"github.com/hashicorp/terraform/internal/getproviders"
@@ -606,6 +606,7 @@ func (i *Installer) getProviderHash(addr addrs.Provider) string {
 
 	hashes := l.PreferredHashes()
 	if len(hashes) == 0 {
+		fmt.Printf("0 hashes\n")
 		return addr.String()
 	}
 
@@ -637,13 +638,12 @@ func (i *Installer) GetCachedSchema(addr addrs.Provider) *providers.Schemas {
 		return nil
 	}
 
-	var p providers.Schemas
-	err = json.Unmarshal(buf, &p)
+	p, err := jsonprovider.UnmarshalProvider(buf)
 	if err != nil {
 		return nil
 	}
 
-	return &p
+	return p
 }
 
 func (i *Installer) SetCachedSchema(addr addrs.Provider, schema *providers.Schemas) error {
@@ -653,7 +653,7 @@ func (i *Installer) SetCachedSchema(addr addrs.Provider, schema *providers.Schem
 		return err
 	}
 
-	buf, err := json.Marshal(schema)
+	buf, err := jsonprovider.MarshalProvider(schema)
 	if err != nil {
 		return err
 	}
