@@ -5,6 +5,7 @@ package views
 
 import (
 	"bytes"
+	encJson "encoding/json"
 	"fmt"
 	"strings"
 
@@ -213,58 +214,28 @@ func (v *OperationJSON) EmergencyDumpState(stateFile *statefile.File) error {
 // Log a change summary and a series of "planned" messages for the changes in
 // the plan.
 func (v *OperationJSON) Plan(plan *plans.Plan, schemas *terraform.Schemas) {
-	for _, dr := range plan.DriftedResources {
-		// In refresh-only mode, we output all resources marked as drifted,
-		// including those which have moved without other changes. In other plan
-		// modes, move-only changes will be included in the planned changes, so
-		// we skip them here.
-		if dr.Action != plans.NoOp || plan.UIMode == plans.RefreshOnlyMode {
-			v.view.ResourceDrift(json.NewResourceInstanceChange(dr))
-		}
+	outputs, changed, drift, attrs, err := jsonplan.MarshalForRenderer(plan, schemas)
+	if err != nil {
+		v.view.Error(err) // TODO: better error messages
+		return
 	}
 
-	cs := &json.ChangeSummary{
-		Operation: json.OperationPlanned,
-	}
-	for _, change := range plan.Changes.Resources {
-		if change.Action == plans.Delete && change.Addr.Resource.Resource.Mode == addrs.DataResourceMode {
-			// Avoid rendering data sources on deletion
-			continue
-		}
-
-		if change.Importing != nil {
-			cs.Import++
-		}
-
-		switch change.Action {
-		case plans.Create:
-			cs.Add++
-		case plans.Delete:
-			cs.Remove++
-		case plans.Update:
-			cs.Change++
-		case plans.CreateThenDelete, plans.DeleteThenCreate:
-			cs.Add++
-			cs.Remove++
-		}
-
-		if change.Action != plans.NoOp || !change.Addr.Equal(change.PrevRunAddr) || change.Importing != nil {
-			v.view.PlannedChange(json.NewResourceInstanceChange(change))
-		}
+	jplan := jsonformat.Plan{
+		PlanFormatVersion:     jsonplan.FormatVersion,
+		ProviderFormatVersion: jsonprovider.FormatVersion,
+		OutputChanges:         outputs,
+		ResourceChanges:       changed,
+		ResourceDrift:         drift,
+		RelevantAttributes:    attrs,
 	}
 
-	v.view.ChangeSummary(cs)
+	bytes, err := encJson.Marshal(jplan)
+	if err != nil {
+		v.view.Error(err) // TODO: better error messages
+		return
+	}
 
-	var rootModuleOutputs []*plans.OutputChangeSrc
-	for _, output := range plan.Changes.Outputs {
-		if !output.Addr.Module.IsRoot() {
-			continue
-		}
-		rootModuleOutputs = append(rootModuleOutputs, output)
-	}
-	if len(rootModuleOutputs) > 0 {
-		v.view.Outputs(json.OutputsFromChanges(rootModuleOutputs))
-	}
+	v.view.Plan(bytes)
 }
 
 func (v *OperationJSON) PlannedChange(change *plans.ResourceInstanceChangeSrc) {

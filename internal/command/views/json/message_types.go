@@ -12,6 +12,7 @@ const (
 	// Generic messages
 	MessageVersion    MessageType = "version"
 	MessageLog        MessageType = "log"
+	MessageError      MessageType = "error"
 	MessageDiagnostic MessageType = "diagnostic"
 
 	// Operation results
@@ -20,6 +21,7 @@ const (
 	MessageChangeSummary MessageType = "change_summary"
 	MessageOutputs       MessageType = "outputs"
 	MessageResult        MessageType = "result"
+	MessagePlan          MessageType = "plan"
 
 	// Hook-driven messages
 	MessageApplyStart        MessageType = "apply_start"

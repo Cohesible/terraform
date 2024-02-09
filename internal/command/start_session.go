@@ -248,9 +248,8 @@ func (c *StartSessionCommand) handleInput(
 	// Render the resource count and outputs, unless those counts are being
 	// rendered already in a remote Terraform process.
 	if rb, isRemoteBackend := be.(BackendWithRemoteTerraformVersion); !isRemoteBackend || rb.IsLocalOperations() {
-		view.ResourceCount(args.State.StateOutPath)
-		if op.State != nil {
-			view.Outputs(op.State.RootModule().OutputValues)
+		if opType == backend.OperationTypeApply {
+			view.ResourceCount(args.State.StateOutPath)
 		}
 	}
 

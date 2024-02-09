@@ -69,6 +69,22 @@ func (v *JSONView) Result(data []byte) {
 	)
 }
 
+func (v *JSONView) Plan(data []byte) {
+	v.log.Info(
+		"Plan",
+		"type", json.MessagePlan,
+		"data", encJson.RawMessage(data),
+	)
+}
+
+func (v *JSONView) Error(err error) {
+	v.log.Info(
+		"Error",
+		"type", json.MessageError,
+		"data", err.Error(),
+	)
+}
+
 func (v *JSONView) Ready() {
 	v.log.Info("Ready", "type", json.MessageReady)
 }

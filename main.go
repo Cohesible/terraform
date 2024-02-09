@@ -88,9 +88,6 @@ func realMain() int {
 	}
 	log.Printf("[INFO] Go runtime version: %s", runtime.Version())
 	log.Printf("[INFO] CLI args: %#v", os.Args)
-	if ExperimentsAllowed() {
-		log.Printf("[INFO] This build of Terraform allows using experimental features")
-	}
 
 	streams, err := terminal.Init()
 	if err != nil {
@@ -264,7 +261,7 @@ func realMain() int {
 	}
 
 	// Run checkpoint
-	go runCheckpoint(config)
+	// go runCheckpoint(config)
 
 	// Make sure we clean up any managed plugins at the end of this
 	defer plugin.CleanupClients()
