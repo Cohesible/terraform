@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform/internal/command/views/json"
 	"github.com/hashicorp/terraform/internal/plans"
 	"github.com/hashicorp/terraform/internal/states"
+	statesfile "github.com/hashicorp/terraform/internal/states/statefile"
 	"github.com/hashicorp/terraform/internal/terraform"
 )
 
@@ -99,7 +100,7 @@ func (h *jsonHook) applyingHeartbeat(progress applyProgress) {
 	}
 }
 
-func (h *jsonHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.ResourceInstanceObjectSrc) (terraform.HookAction, error) {
+func (h *jsonHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.Resource) (terraform.HookAction, error) {
 	key := addr.String()
 	h.applyingLock.Lock()
 	progress := h.applying[key]
@@ -121,12 +122,18 @@ func (h *jsonHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generati
 		// to apply.
 		h.view.Hook(json.NewApplyErrored(addr, progress.action, elapsed, err))
 	} else {
-		var attr []byte
+		var bytes []byte
 		if src != nil {
-			attr = src.AttrsJSON
+			enc, err := statesfile.EncodeResource(src)
+			if err != nil {
+				h.view.Error(err)
+			} else {
+				bytes = enc
+			}
 		}
+
 		idKey, idValue := format.ObjectValueID(newState)
-		h.view.Hook(json.NewApplyComplete(addr, progress.action, idKey, idValue, elapsed, attr))
+		h.view.Hook(json.NewApplyComplete(addr, progress.action, idKey, idValue, elapsed, bytes))
 	}
 	return terraform.HookActionContinue, nil
 }

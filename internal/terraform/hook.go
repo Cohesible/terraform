@@ -37,7 +37,7 @@ type Hook interface {
 	// single instance is applied. The error argument in PostApply is the
 	// error, if any, that was returned from the provider Apply call itself.
 	PreApply(addr addrs.AbsResourceInstance, gen states.Generation, action plans.Action, priorState, plannedNewState cty.Value) (HookAction, error)
-	PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.ResourceInstanceObjectSrc) (HookAction, error)
+	PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.Resource) (HookAction, error)
 
 	// PreDiff and PostDiff are called before and after a provider is given
 	// the opportunity to customize the proposed new state to produce the
@@ -123,7 +123,7 @@ func (*NilHook) PreApply(addr addrs.AbsResourceInstance, gen states.Generation, 
 	return HookActionContinue, nil
 }
 
-func (*NilHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.ResourceInstanceObjectSrc) (HookAction, error) {
+func (*NilHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.Resource) (HookAction, error) {
 	return HookActionContinue, nil
 }
 

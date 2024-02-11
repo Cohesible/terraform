@@ -214,7 +214,7 @@ func (n *NodeAbstractResourceInstance) preApplyHook(ctx EvalContext, change *pla
 }
 
 // postApplyHook calls the post-Apply hook
-func (n *NodeAbstractResourceInstance) postApplyHook(ctx EvalContext, state *states.ResourceInstanceObject, err error, src *states.ResourceInstanceObjectSrc) tfdiags.Diagnostics {
+func (n *NodeAbstractResourceInstance) postApplyHook(ctx EvalContext, state *states.ResourceInstanceObject, err error, src *states.Resource) tfdiags.Diagnostics {
 	var diags tfdiags.Diagnostics
 
 	// Only managed resources have user-visible apply actions.
@@ -268,7 +268,7 @@ func (n *NodeAbstractResourceInstance) writeResourceInstanceStateDeposed(ctx Eva
 	return err
 }
 
-func (n *NodeAbstractResourceInstance) writeResourceInstanceStateSrc(ctx EvalContext, obj *states.ResourceInstanceObject, targetState phaseState) (*states.ResourceInstanceObjectSrc, error) {
+func (n *NodeAbstractResourceInstance) writeResourceInstanceStateSrc(ctx EvalContext, obj *states.ResourceInstanceObject, targetState phaseState) (*states.Resource, error) {
 	return n.writeResourceInstanceStateImpl(ctx, states.NotDeposed, obj, targetState)
 }
 
@@ -276,7 +276,7 @@ func (n *NodeAbstractResourceInstance) writeResourceInstanceStateSrc(ctx EvalCon
 // writeResourceInstanceStateDeposed. Don't call it directly; instead, use
 // one of the two wrappers to be explicit about which of the instance's
 // objects you are intending to write.
-func (n *NodeAbstractResourceInstance) writeResourceInstanceStateImpl(ctx EvalContext, deposedKey states.DeposedKey, obj *states.ResourceInstanceObject, targetState phaseState) (*states.ResourceInstanceObjectSrc, error) {
+func (n *NodeAbstractResourceInstance) writeResourceInstanceStateImpl(ctx EvalContext, deposedKey states.DeposedKey, obj *states.ResourceInstanceObject, targetState phaseState) (*states.Resource, error) {
 	absAddr := n.Addr
 	_, providerSchema, err := getProvider(ctx, n.ResolvedProvider)
 	if err != nil {
@@ -319,14 +319,14 @@ func (n *NodeAbstractResourceInstance) writeResourceInstanceStateImpl(ctx EvalCo
 	// In spite of the name, this function also handles the non-deposed case
 	// via the writeResourceInstanceState wrapper, by setting deposedKey to
 	// the NotDeposed value (the zero value of DeposedKey).
-	var write func(src *states.ResourceInstanceObjectSrc)
+	var write func(src *states.ResourceInstanceObjectSrc) *states.Resource
 	if deposedKey == states.NotDeposed {
-		write = func(src *states.ResourceInstanceObjectSrc) {
-			state.SetResourceInstanceCurrent(absAddr, src, n.ResolvedProvider)
+		write = func(src *states.ResourceInstanceObjectSrc) *states.Resource {
+			return state.SetResourceInstanceCurrent(absAddr, src, n.ResolvedProvider)
 		}
 	} else {
-		write = func(src *states.ResourceInstanceObjectSrc) {
-			state.SetResourceInstanceDeposed(absAddr, deposedKey, src, n.ResolvedProvider)
+		write = func(src *states.ResourceInstanceObjectSrc) *states.Resource {
+			return state.SetResourceInstanceDeposed(absAddr, deposedKey, src, n.ResolvedProvider)
 		}
 	}
 
@@ -363,8 +363,7 @@ func (n *NodeAbstractResourceInstance) writeResourceInstanceStateImpl(ctx EvalCo
 
 	// log.Printf("[TRACE] %s: resource %s encoded state %d bytes", logFuncName, absAddr, len(src.AttrsJSON))
 
-	write(src)
-	return src, nil
+	return write(src), nil
 }
 
 // planDestroy returns a plain destroy diff.

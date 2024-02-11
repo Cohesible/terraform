@@ -388,54 +388,9 @@ func writeStateV4(file *File, w io.Writer) tfdiags.Diagnostics {
 	}
 
 	for _, ms := range file.State.Modules {
-		moduleAddr := ms.Addr
 		for _, rs := range ms.Resources {
-			resourceAddr := rs.Addr.Resource
-
-			var mode string
-			switch resourceAddr.Mode {
-			case addrs.ManagedResourceMode:
-				mode = "managed"
-			case addrs.DataResourceMode:
-				// Don't add data sources to the state
-				continue
-			default:
-				diags = diags.Append(tfdiags.Sourceless(
-					tfdiags.Error,
-					"Failed to serialize resource in state",
-					fmt.Sprintf("Resource %s has mode %s, which cannot be serialized in state", resourceAddr.Absolute(moduleAddr), resourceAddr.Mode),
-				))
-				continue
-			}
-
-			res := resourceStateV4{
-				Module:         moduleAddr.String(),
-				Mode:           mode,
-				Type:           resourceAddr.Type,
-				Name:           resourceAddr.Name,
-				ProviderConfig: rs.ProviderConfig.String(),
-				Instances:      []instanceObjectStateV4{},
-			}
-
-			for key, is := range rs.Instances {
-				if is.HasCurrent() && !is.Current.Imported {
-					var objDiags tfdiags.Diagnostics
-					res.Instances, objDiags = appendInstanceObjectStateV4(
-						rs, is, key, is.Current, states.NotDeposed,
-						res.Instances,
-					)
-					diags = diags.Append(objDiags)
-				}
-				for dk, obj := range is.Deposed {
-					var objDiags tfdiags.Diagnostics
-					res.Instances, objDiags = appendInstanceObjectStateV4(
-						rs, is, key, obj, dk,
-						res.Instances,
-					)
-					diags = diags.Append(objDiags)
-				}
-			}
-
+			res, encodeDiags := encodeResource(rs)
+			diags = append(diags, encodeDiags...)
 			if len(res.Instances) > 0 {
 				sV4.Resources = append(sV4.Resources, res)
 			}
@@ -469,6 +424,65 @@ func writeStateV4(file *File, w io.Writer) tfdiags.Diagnostics {
 	}
 
 	return diags
+}
+
+func encodeResource(rs *states.Resource) (resourceStateV4, tfdiags.Diagnostics) {
+	var diags tfdiags.Diagnostics
+	resourceAddr := rs.Addr.Resource
+
+	var mode string
+	switch resourceAddr.Mode {
+	case addrs.ManagedResourceMode:
+		mode = "managed"
+	case addrs.DataResourceMode:
+		return resourceStateV4{}, diags
+	default:
+		diags = diags.Append(tfdiags.Sourceless(
+			tfdiags.Error,
+			"Failed to serialize resource in state",
+			fmt.Sprintf("Resource %s has mode %s, which cannot be serialized in state", resourceAddr, resourceAddr.Mode),
+		))
+		return resourceStateV4{}, diags
+	}
+
+	res := resourceStateV4{
+		Module:         rs.Addr.Config().Module.String(),
+		Mode:           mode,
+		Type:           resourceAddr.Type,
+		Name:           resourceAddr.Name,
+		ProviderConfig: rs.ProviderConfig.String(),
+		Instances:      []instanceObjectStateV4{},
+	}
+
+	for key, is := range rs.Instances {
+		if is.HasCurrent() && !is.Current.Imported {
+			var objDiags tfdiags.Diagnostics
+			res.Instances, objDiags = appendInstanceObjectStateV4(
+				rs, is, key, is.Current, states.NotDeposed,
+				res.Instances,
+			)
+			diags = diags.Append(objDiags)
+		}
+		for dk, obj := range is.Deposed {
+			var objDiags tfdiags.Diagnostics
+			res.Instances, objDiags = appendInstanceObjectStateV4(
+				rs, is, key, obj, dk,
+				res.Instances,
+			)
+			diags = diags.Append(objDiags)
+		}
+	}
+
+	return res, diags
+}
+
+func EncodeResource(rs *states.Resource) ([]byte, error) {
+	r, diags := encodeResource(rs)
+	if diags.HasErrors() {
+		return nil, diags.Err()
+	}
+
+	return json.Marshal(r)
 }
 
 func appendInstanceObjectStateV4(rs *states.Resource, is *states.ResourceInstance, key addrs.InstanceKey, obj *states.ResourceInstanceObjectSrc, deposed states.DeposedKey, isV4s []instanceObjectStateV4) ([]instanceObjectStateV4, tfdiags.Diagnostics) {
