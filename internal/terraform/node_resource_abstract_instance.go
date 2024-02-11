@@ -591,9 +591,9 @@ func (n *NodeAbstractResourceInstance) refresh(ctx EvalContext, deposedKey state
 		ProviderMeta: metaConfigVal,
 	}
 
-	if n.ResolvedProvider.Provider.Type == "cloudscript" {
+	if n.ResolvedProvider.Provider.Type == "synapse" {
 		providerReq.ResourceName = n.Addr.Resource.Resource.Name
-		providerReq.Dependencies = n.getCloudScriptResourceDeps()
+		providerReq.Dependencies = n.getSynapseResourceDeps()
 		providerReq.Marks = priorPaths
 	}
 
@@ -782,7 +782,7 @@ func (n *NodeAbstractResourceInstance) plan(
 	}
 
 	// Do not validate configs from builtin resources
-	if n.ResolvedProvider.Provider.Type != "cloudscript" {
+	if n.ResolvedProvider.Provider.Type != "synapse" {
 		log.Printf("[TRACE] Re-validating config for %q", n.Addr)
 		// Allow the provider to validate the final set of values.  The config was
 		// statically validated early on, but there may have been unknown values
@@ -1434,10 +1434,10 @@ func processIgnoreChangesIndividual(prior, config cty.Value, ignoreChangesPath [
 	return ret, nil
 }
 
-func (n *NodeAbstractResourceInstance) getCloudScriptResourceDeps() []string {
+func (n *NodeAbstractResourceInstance) getSynapseResourceDeps() []string {
 	deps := make([]string, 0)
 	for _, d := range n.Dependencies {
-		if d.Resource.Mode == addrs.ManagedResourceMode && d.Resource.Type == "cloudscript_resource" {
+		if d.Resource.Mode == addrs.ManagedResourceMode && d.Resource.Type == "synapse_resource" {
 			deps = append(deps, d.Resource.Name)
 		}
 	}
@@ -1517,9 +1517,9 @@ func (n *NodeAbstractResourceInstance) readDataSource(ctx EvalContext, configVal
 		ProviderMeta: metaConfigVal,
 	}
 
-	if n.ResolvedProvider.Provider.Type == "cloudscript" {
+	if n.ResolvedProvider.Provider.Type == "synapse" {
 		req.ResourceName = n.Addr.Resource.Resource.Name
-		req.Dependencies = n.getCloudScriptResourceDeps()
+		req.Dependencies = n.getSynapseResourceDeps()
 		req.Marks = pvm
 	}
 
@@ -2376,9 +2376,9 @@ func (n *NodeAbstractResourceInstance) apply(
 		ProviderMeta:   metaConfigVal,
 	}
 
-	if n.ResolvedProvider.Provider.Type == "cloudscript" {
+	if n.ResolvedProvider.Provider.Type == "synapse" {
 		req.ResourceName = n.Addr.Resource.Resource.Name
-		req.Dependencies = n.getCloudScriptResourceDeps()
+		req.Dependencies = n.getSynapseResourceDeps()
 		req.PriorMarks = beforePaths
 		req.PlannedMarks = afterPaths
 	}

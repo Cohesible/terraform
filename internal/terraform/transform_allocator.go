@@ -528,7 +528,7 @@ func buildGraph(c *configs.Config) (*Graph, tfdiags.Diagnostics) {
 			isLeaf: true,
 		}
 
-		if v.Type == "cloudscript_resource" {
+		if v.Type == "synapse_resource" {
 			subtype, _ := configs.DecodeAsString(block.attributes["type"])
 			vert.subtype = subtype
 		}

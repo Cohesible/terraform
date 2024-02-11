@@ -1,4 +1,4 @@
-package cloudscript
+package synapse
 
 import (
 	"bytes"

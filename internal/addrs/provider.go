@@ -70,7 +70,7 @@ func NewProvider(hostname svchost.Hostname, namespace, typeName string) Provider
 // which remains only for compatibility with older Terraform versions.
 func ImpliedProviderForUnqualifiedType(typeName string) Provider {
 	switch typeName {
-	case "terraform", "cloudscript":
+	case "terraform", "synapse":
 		// Note for future maintainers: any additional strings we add here
 		// as implied to be builtin must never also be use as provider names
 		// in the registry.terraform.io/hashicorp/... namespace, because

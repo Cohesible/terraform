@@ -35,7 +35,7 @@ func upgradeResourceState(addr addrs.AbsResourceInstance, provider providers.Int
 	// TODO: This should eventually use a proper FQN.
 	providerType := addr.Resource.Resource.ImpliedProvider()
 
-	if providerType == "cloudscript" {
+	if providerType == "synapse" {
 		log.Printf("[DEBUG] skipping state upgrade for builtin resource %q", addr)
 		return src, nil
 	}

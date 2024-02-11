@@ -74,7 +74,7 @@ func (c *VersionCommand) Run(args []string) int {
 		return 1
 	}
 
-	fmt.Fprintf(&versionString, "CloudScript-Terraform v%s", c.Version)
+	fmt.Fprintf(&versionString, "Synapse-Terraform v%s", c.Version)
 	if c.VersionPrerelease != "" {
 		fmt.Fprintf(&versionString, "-%s", c.VersionPrerelease)
 	}

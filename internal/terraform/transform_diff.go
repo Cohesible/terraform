@@ -129,9 +129,9 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 
 		createHookNode := func(action string, target *NodeAbstractResourceInstance) ([]*graphNodeLifeCycleHook, hcl.Diagnostics) {
 			// TODO: FIXME: this is not robust and crashes when using "alias"
-			providerConfig := t.Config.Module.ProviderConfigs["cloudscript"]
+			providerConfig := t.Config.Module.ProviderConfigs["synapse"]
 			providerAddr := t.Config.ResolveAbsProviderAddr(
-				addrs.NewDefaultLocalProviderConfig("cloudscript"),
+				addrs.NewDefaultLocalProviderConfig("synapse"),
 				addrs.RootModuleInstance.Module(),
 			)
 			attrs, diags := providerConfig.Config.JustAttributes()
@@ -153,7 +153,7 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 			if !exists {
 				return nil, append(diags, &hcl.Diagnostic{
 					Severity: hcl.DiagError,
-					Summary:  fmt.Sprintf("Missing endpoint in cloudscript provider config"),
+					Summary:  fmt.Sprintf("Missing endpoint in synapse provider config"),
 				})
 			}
 

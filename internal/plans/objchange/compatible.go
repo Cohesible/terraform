@@ -228,7 +228,7 @@ func assertValueCompatible(planned, actual cty.Value, path cty.Path) []error {
 		return errs
 	}
 	if planned.IsNull() {
-		// XXX: this hack is currently necessary to support the `cloudscript` builtin provider
+		// XXX: this hack is currently necessary to support the `synapse` builtin provider
 		// the provider should map all null input values to "Unknown"
 		//
 		// errs = append(errs, path.NewErrorf("was null, but now %#v", actual))

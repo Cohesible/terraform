@@ -191,7 +191,7 @@ type ReadResourceRequest struct {
 	// TypeName is the name of the resource type being read.
 	TypeName string
 
-	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
+	// ONLY ADDED FOR SYNAPSE PROVIDER
 	ResourceName string
 	Dependencies []string // `${type}.${name}` or `data.${type}.${name}`
 	Marks        []cty.PathValueMarks
@@ -222,7 +222,7 @@ type ReadResourceResponse struct {
 	// resource. It is intended only for interpretation by the provider itself.
 	Private []byte
 
-	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
+	// ONLY ADDED FOR SYNAPSE PROVIDER
 	Marks []cty.PathValueMarks
 }
 
@@ -285,7 +285,7 @@ type ApplyResourceChangeRequest struct {
 	// TypeName is the name of the resource type being applied.
 	TypeName string
 
-	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
+	// ONLY ADDED FOR SYNAPSE PROVIDER
 	ResourceName string
 	Dependencies []string // `${type}.${name}` or `data.${type}.${name}`
 	PriorMarks   []cty.PathValueMarks
@@ -321,7 +321,7 @@ type ApplyResourceChangeResponse struct {
 	// known state of the resource, if it exists.
 	NewState cty.Value
 
-	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
+	// ONLY ADDED FOR SYNAPSE PROVIDER
 	Marks []cty.PathValueMarks
 
 	// Private is an opaque blob that will be stored in state along with the
@@ -400,7 +400,7 @@ type ReadDataSourceRequest struct {
 	// TypeName is the name of the data source type to Read.
 	TypeName string
 
-	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
+	// ONLY ADDED FOR SYNAPSE PROVIDER
 	ResourceName string
 	Dependencies []string // `${type}.${name}` or `data.${type}.${name}`
 	Marks        []cty.PathValueMarks
@@ -423,6 +423,6 @@ type ReadDataSourceResponse struct {
 	// Diagnostics contains any warnings or errors from the method call.
 	Diagnostics tfdiags.Diagnostics
 
-	// ONLY ADDED FOR CLOUDSCRIPT PROVIDER
+	// ONLY ADDED FOR SYNAPSE PROVIDER
 	Marks []cty.PathValueMarks
 }

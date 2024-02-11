@@ -634,7 +634,7 @@ func (c *Context) planWalk(config *configs.Config, prevRunState *states.State, o
 
 	var driftedResources []*plans.ResourceInstanceChangeSrc
 	if !opts.SkipRefresh {
-		// TODO: `driftedResources` shouldn't need to check most `cloudscript` resources
+		// TODO: `driftedResources` shouldn't need to check most `synapse` resources
 		drifted, driftDiags := c.driftedResources(config, prevRunState, priorState, moveResults)
 		diags = diags.Append(driftDiags)
 		driftedResources = append(driftedResources, drifted...)
