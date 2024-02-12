@@ -228,15 +228,19 @@ func Index(collection, key cty.Value, srcRange *Range) (cty.Value, Diagnostics) 
 		return collection.GetAttr(attrName), nil
 
 	case ty.IsSetType():
-		return cty.DynamicVal, Diagnostics{
-			{
-				Severity: DiagError,
-				Summary:  invalidIndex,
-				Detail:   "Elements of a set are identified only by their value and don't have any separate index or key to select with, so it's only possible to perform operations across all elements of the set.",
-				Subject:  srcRange,
-			},
+		col, err := convert.Convert(collection, cty.List(ty.ElementType()))
+		if err != nil {
+			return cty.DynamicVal, Diagnostics{
+				{
+					Severity: DiagError,
+					Summary:  "Failed conversion",
+					Detail:   fmt.Sprintf("Failed to convert set to a list: %s", err),
+					Subject:  srcRange,
+				},
+			}
 		}
 
+		return Index(col, key, srcRange)
 	default:
 		return cty.DynamicVal, Diagnostics{
 			{
