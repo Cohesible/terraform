@@ -6,7 +6,7 @@ package configload
 import (
 	"testing"
 
-	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/terraform/internal/hcl"
 	"github.com/zclconf/go-cty/cty"
 )
 

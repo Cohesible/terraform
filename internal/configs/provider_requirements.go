@@ -7,8 +7,8 @@ import (
 	"fmt"
 
 	version "github.com/hashicorp/go-version"
-	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/terraform/internal/addrs"
+	"github.com/hashicorp/terraform/internal/hcl"
 	"github.com/zclconf/go-cty/cty"
 )
 

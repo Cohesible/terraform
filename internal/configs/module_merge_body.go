@@ -4,7 +4,7 @@
 package configs
 
 import (
-	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/terraform/internal/hcl"
 )
 
 // MergeBodies creates a new HCL body that contains a combination of the

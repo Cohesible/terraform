@@ -10,8 +10,8 @@ import (
 	"github.com/hashicorp/terraform/internal/tfdiags"
 	"github.com/zclconf/go-cty/cty"
 
-	"github.com/hashicorp/hcl/v2"
-	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/hashicorp/terraform/internal/hcl"
+	"github.com/hashicorp/terraform/internal/hcl/hclsyntax"
 )
 
 // ProviderConfig is an interface type whose dynamic type can be either

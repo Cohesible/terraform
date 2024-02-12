@@ -13,7 +13,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/terraform/internal/hcl"
 )
 
 // TestParseLoadConfigFileSuccess is a simple test that just verifies that

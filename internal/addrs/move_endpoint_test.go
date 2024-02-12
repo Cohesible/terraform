@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/hashicorp/hcl/v2"
-	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/hashicorp/terraform/internal/hcl"
+	"github.com/hashicorp/terraform/internal/hcl/hclsyntax"
 )
 
 func TestParseMoveEndpoint(t *testing.T) {

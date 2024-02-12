@@ -6,7 +6,7 @@ package configs
 import (
 	"fmt"
 
-	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/terraform/internal/hcl"
 )
 
 // Provisioner represents a "provisioner" block when used within a

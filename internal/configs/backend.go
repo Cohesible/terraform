@@ -4,9 +4,9 @@
 package configs
 
 import (
-	"github.com/hashicorp/hcl/v2"
-	"github.com/hashicorp/hcl/v2/hcldec"
 	"github.com/hashicorp/terraform/internal/configs/configschema"
+	"github.com/hashicorp/terraform/internal/hcl"
+	"github.com/hashicorp/terraform/internal/hcl/hcldec"
 	"github.com/zclconf/go-cty/cty"
 )
 

@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/hashicorp/hcl/v2"
 	svchost "github.com/hashicorp/terraform-svchost"
+	"github.com/hashicorp/terraform/internal/hcl"
 	"github.com/posener/complete"
 	"github.com/zclconf/go-cty/cty"
 

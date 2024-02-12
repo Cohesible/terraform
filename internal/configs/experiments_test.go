@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/terraform/internal/hcl"
 
 	"github.com/hashicorp/terraform/internal/experiments"
 )

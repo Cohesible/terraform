@@ -9,7 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform/internal/command/format"
 
-	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/hashicorp/terraform/internal/hcl/hclsyntax"
 
 	"github.com/hashicorp/terraform/internal/command/jsonformat/computed"
 	"github.com/hashicorp/terraform/internal/plans"

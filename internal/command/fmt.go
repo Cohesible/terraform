@@ -14,9 +14,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hashicorp/hcl/v2"
-	"github.com/hashicorp/hcl/v2/hclsyntax"
-	"github.com/hashicorp/hcl/v2/hclwrite"
+	"github.com/hashicorp/terraform/internal/hcl"
+	"github.com/hashicorp/terraform/internal/hcl/hclsyntax"
+	"github.com/hashicorp/terraform/internal/hcl/hclwrite"
 	"github.com/mitchellh/cli"
 
 	"github.com/hashicorp/terraform/internal/configs"

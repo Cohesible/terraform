@@ -6,7 +6,7 @@ package tfdiags
 import (
 	"fmt"
 
-	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/terraform/internal/hcl"
 )
 
 var _ Diagnostic = CheckBlockDiagnostic{}

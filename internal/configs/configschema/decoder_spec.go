@@ -8,7 +8,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/hashicorp/hcl/v2/hcldec"
+	"github.com/hashicorp/terraform/internal/hcl/hcldec"
 	"github.com/zclconf/go-cty/cty"
 )
 

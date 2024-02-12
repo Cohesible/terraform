@@ -3,7 +3,7 @@
 
 package configs
 
-import "github.com/hashicorp/hcl/v2"
+import "github.com/hashicorp/terraform/internal/hcl"
 
 // ProviderMeta represents a "provider_meta" block inside a "terraform" block
 // in a module or file.

@@ -4,7 +4,7 @@
 package tfdiags
 
 import (
-	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/terraform/internal/hcl"
 )
 
 // hclDiagnostic is a Diagnostic implementation that wraps a HCL Diagnostic

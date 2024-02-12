@@ -9,10 +9,10 @@ import "runtime/debug"
 // intended to mean here. We should keep this set relatively small to avoid
 // bloating the logs too much.
 var interestingDependencies = map[string]struct{}{
-	"github.com/hashicorp/hcl/v2":            {},
-	"github.com/zclconf/go-cty":              {},
-	"github.com/hashicorp/go-tfe":            {},
-	"github.com/hashicorp/terraform-svchost": {},
+	"github.com/hashicorp/terraform/internal/hcl": {},
+	"github.com/zclconf/go-cty":                   {},
+	"github.com/hashicorp/go-tfe":                 {},
+	"github.com/hashicorp/terraform-svchost":      {},
 }
 
 // InterestingDependencies returns the compiled-in module version info for

@@ -7,8 +7,8 @@ import (
 	"fmt"
 
 	version "github.com/hashicorp/go-version"
-	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/terraform/internal/configs"
+	"github.com/hashicorp/terraform/internal/hcl"
 )
 
 // LoadConfig reads the Terraform module in the given directory and uses it as the
