@@ -329,17 +329,253 @@ func (c *InitCommand) Run(args []string) int {
 	return 0
 }
 
+func (c *InitCommand) DoInit(args []string) tfdiags.Diagnostics {
+	diags := tfdiags.Diagnostics{}
+
+	var flagFromModule, flagLockfile string
+	var flagBackend, flagCloud, flagGet, flagUpgrade bool
+	var flagPluginPath FlagStringSlice
+	flagConfigExtra := newRawFlags("-backend-config")
+
+	args = c.Meta.process(args)
+	cmdFlags := c.Meta.extendedFlagSet("init")
+	cmdFlags.BoolVar(&flagBackend, "backend", true, "")
+	cmdFlags.BoolVar(&flagCloud, "cloud", true, "")
+	cmdFlags.Var(flagConfigExtra, "backend-config", "")
+	cmdFlags.StringVar(&flagFromModule, "from-module", "", "copy the source of the given module into the directory before init")
+	cmdFlags.BoolVar(&flagGet, "get", true, "")
+	cmdFlags.BoolVar(&c.forceInitCopy, "force-copy", false, "suppress prompts about copying state data")
+	cmdFlags.BoolVar(&c.Meta.stateLock, "lock", true, "lock state")
+	cmdFlags.DurationVar(&c.Meta.stateLockTimeout, "lock-timeout", 0, "lock timeout")
+	cmdFlags.BoolVar(&c.reconfigure, "reconfigure", false, "reconfigure")
+	cmdFlags.BoolVar(&c.migrateState, "migrate-state", false, "migrate state")
+	cmdFlags.BoolVar(&flagUpgrade, "upgrade", false, "")
+	cmdFlags.Var(&flagPluginPath, "plugin-dir", "plugin directory")
+	cmdFlags.StringVar(&flagLockfile, "lockfile", "", "Set a dependency lockfile mode")
+	cmdFlags.BoolVar(&c.Meta.ignoreRemoteVersion, "ignore-remote-version", false, "continue even if remote and local Terraform versions are incompatible")
+	// cmdFlags.Usage = func() { c.Ui.Error(c.Help()) }
+	if err := cmdFlags.Parse(args); err != nil {
+		return diags.Append(err)
+	}
+
+	backendFlagSet := arguments.FlagIsSet(cmdFlags, "backend")
+	cloudFlagSet := arguments.FlagIsSet(cmdFlags, "cloud")
+
+	switch {
+	case backendFlagSet && cloudFlagSet:
+		return diags.Append(
+			fmt.Errorf("The -backend and -cloud options are aliases of one another and mutually-exclusive in their use"),
+		)
+	case backendFlagSet:
+		flagCloud = flagBackend
+	case cloudFlagSet:
+		flagBackend = flagCloud
+	}
+
+	if c.migrateState && c.reconfigure {
+		return diags.Append(
+			fmt.Errorf("The -migrate-state and -reconfigure options are mutually-exclusive"),
+		)
+	}
+
+	// Copying the state only happens during backend migration, so setting
+	// -force-copy implies -migrate-state
+	if c.forceInitCopy {
+		c.migrateState = true
+	}
+
+	if len(flagPluginPath) > 0 {
+		c.pluginPath = flagPluginPath
+	}
+
+	// Validate the arg count and get the working directory
+	args = cmdFlags.Args()
+	path, err := ModulePath(args)
+	if err != nil {
+		return diags.Append(err)
+	}
+
+	if err := c.storePluginPath(c.pluginPath); err != nil {
+		return diags.Append(fmt.Sprintf("Error saving -plugin-path values: %s", err))
+	}
+
+	if flagFromModule != "" {
+		src := flagFromModule
+
+		empty, err := configs.IsEmptyDir(path)
+		if err != nil {
+			return diags.Append(fmt.Sprintf("Error validating destination directory: %s", err))
+		}
+		if !empty {
+			return diags.Append(strings.TrimSpace(errInitCopyNotEmpty))
+		}
+
+		// c.Ui.Output(c.Colorize().Color(fmt.Sprintf(
+		// 	"[reset][bold]Copying configuration[reset] from %q...", src,
+		// )))
+
+		hooks := uiModuleInstallHooks{
+			Ui:             c.Ui,
+			ShowLocalPaths: false, // since they are in a weird location for init
+		}
+
+		initDirFromModuleAbort, initDirFromModuleDiags := c.initDirFromModule(path, src, hooks)
+		diags = diags.Append(initDirFromModuleDiags)
+		if initDirFromModuleAbort || initDirFromModuleDiags.HasErrors() {
+			return diags
+		}
+	}
+
+	// If our directory is empty, then we're done. We can't get or set up
+	// the backend with an empty directory.
+	empty, err := configs.IsEmptyDir(path)
+	if err != nil {
+		return diags.Append(fmt.Errorf("Error checking configuration: %s", err))
+	}
+	if empty {
+		return diags.Append(strings.TrimSpace(outputInitEmpty))
+	}
+
+	// Load just the root module to begin backend and module initialization
+	rootModEarly, earlyConfDiags := c.loadSingleModule(path)
+
+	// There may be parsing errors in config loading but these will be shown later _after_
+	// checking for core version requirement errors. Not meeting the version requirement should
+	// be the first error displayed if that is an issue, but other operations are required
+	// before being able to check core version requirements.
+	if rootModEarly == nil {
+		// c.Ui.Error(c.Colorize().Color(strings.TrimSpace(errInitConfigError)))
+
+		return diags.Append(earlyConfDiags)
+	}
+
+	var back backend.Backend
+
+	// There may be config errors or backend init errors but these will be shown later _after_
+	// checking for core version requirement errors.
+	var backDiags tfdiags.Diagnostics
+
+	switch {
+	case flagCloud && rootModEarly.CloudConfig != nil:
+		back, _, backDiags = c.initCloud(rootModEarly, flagConfigExtra)
+	case flagBackend:
+		back, _, backDiags = c.initBackend(rootModEarly, flagConfigExtra)
+	default:
+		// load the previously-stored backend config
+		back, backDiags = c.Meta.backendFromState()
+	}
+
+	var state *states.State
+
+	// If we have a functional backend (either just initialized or initialized
+	// on a previous run) we'll use the current state as a potential source
+	// of provider dependencies.
+	if back != nil {
+		c.ignoreRemoteVersionConflict(back)
+		workspace, err := c.Workspace()
+		if err != nil {
+			return diags.Append(fmt.Sprintf("Error selecting workspace: %s", err))
+		}
+		sMgr, err := back.StateMgr(workspace)
+		if err != nil {
+			return diags.Append(fmt.Sprintf("Error loading state: %s", err))
+		}
+
+		if err := sMgr.RefreshState(); err != nil {
+			return diags.Append(fmt.Sprintf("Error refreshing state: %s", err))
+		}
+
+		state = sMgr.State()
+	}
+
+	if flagGet {
+		_, modsAbort, modsDiags := c.getModules(path, rootModEarly, flagUpgrade)
+		diags = diags.Append(modsDiags)
+		if modsAbort || modsDiags.HasErrors() {
+			return diags
+		}
+	}
+
+	// With all of the modules (hopefully) installed, we can now try to load the
+	// whole configuration tree.
+	config, confDiags := c.loadConfig(path)
+	// configDiags will be handled after the version constraint check, since an
+	// incorrect version of terraform may be producing errors for configuration
+	// constructs added in later versions.
+
+	// Before we go further, we'll check to make sure none of the modules in
+	// the configuration declare that they don't support this Terraform
+	// version, so we can produce a version-related error message rather than
+	// potentially-confusing downstream errors.
+	versionDiags := terraform.CheckCoreVersionRequirements(config)
+	if versionDiags.HasErrors() {
+		return versionDiags
+	}
+
+	// We've passed the core version check, now we can show errors from the
+	// configuration and backend initialisation.
+
+	// Now, we can check the diagnostics from the early configuration and the
+	// backend.
+	diags = diags.Append(earlyConfDiags)
+	diags = diags.Append(backDiags)
+	if earlyConfDiags.HasErrors() {
+		//c.Ui.Error(strings.TrimSpace(errInitConfigError))
+		return diags
+	}
+
+	// Now, we can show any errors from initializing the backend, but we won't
+	// show the errInitConfigError preamble as we didn't detect problems with
+	// the early configuration.
+	if backDiags.HasErrors() {
+		//c.showDiagnostics(diags)
+		return diags
+	}
+
+	// If everything is ok with the core version check and backend initialization,
+	// show other errors from loading the full configuration tree.
+	diags = diags.Append(confDiags)
+	if confDiags.HasErrors() {
+		//c.Ui.Error(strings.TrimSpace(errInitConfigError))
+		return diags
+	}
+
+	if cb, ok := back.(*cloud.Cloud); ok {
+		if c.RunningInAutomation {
+			if err := cb.AssertImportCompatible(config); err != nil {
+				//c.showDiagnostics(diags)
+				return diags.Append(tfdiags.Sourceless(tfdiags.Error, "Compatibility error", err.Error()))
+			}
+		}
+	}
+
+	// Now that we have loaded all modules, check the module tree for missing providers.
+	_, providersAbort, providerDiags := c.getProviders(config, state, flagUpgrade, flagPluginPath, flagLockfile)
+	diags = diags.Append(providerDiags)
+	if providersAbort || providerDiags.HasErrors() {
+		return diags
+	}
+
+	// If we accumulated any warnings along the way that weren't accompanied
+	// by errors then we'll output them here so that the success message is
+	// still the final thing shown.
+	// c.showDiagnostics(diags)
+	// c.Ui.Output(c.Colorize().Color(strings.TrimSpace(output)))
+
+	return diags
+}
+
 func (c *InitCommand) getModules(path string, earlyRoot *configs.Module, upgrade bool) (output bool, abort bool, diags tfdiags.Diagnostics) {
 	if len(earlyRoot.ModuleCalls) == 0 {
 		// Nothing to do
 		return false, false, nil
 	}
 
-	if upgrade {
-		c.Ui.Output(c.Colorize().Color("[reset][bold]Upgrading modules..."))
-	} else {
-		c.Ui.Output(c.Colorize().Color("[reset][bold]Initializing modules..."))
-	}
+	// if upgrade {
+	// 	c.Ui.Output(c.Colorize().Color("[reset][bold]Upgrading modules..."))
+	// } else {
+	// 	c.Ui.Output(c.Colorize().Color("[reset][bold]Initializing modules..."))
+	// }
 
 	hooks := uiModuleInstallHooks{
 		Ui:             c.Ui,
@@ -370,7 +606,7 @@ func (c *InitCommand) getModules(path string, earlyRoot *configs.Module, upgrade
 }
 
 func (c *InitCommand) initCloud(root *configs.Module, extraConfig rawFlags) (be backend.Backend, output bool, diags tfdiags.Diagnostics) {
-	c.Ui.Output(c.Colorize().Color("\n[reset][bold]Initializing Terraform Cloud..."))
+	// c.Ui.Output(c.Colorize().Color("\n[reset][bold]Initializing Terraform Cloud..."))
 
 	if len(extraConfig.AllItems()) != 0 {
 		diags = diags.Append(tfdiags.Sourceless(
@@ -394,8 +630,6 @@ func (c *InitCommand) initCloud(root *configs.Module, extraConfig rawFlags) (be 
 }
 
 func (c *InitCommand) initBackend(root *configs.Module, extraConfig rawFlags) (be backend.Backend, output bool, diags tfdiags.Diagnostics) {
-	c.Ui.Output(c.Colorize().Color("\n[reset][bold]Initializing the backend..."))
-
 	var backendConfig *configs.Backend
 	var backendConfigOverride hcl.Body
 	if root.Backend != nil {
@@ -548,15 +782,13 @@ func (c *InitCommand) getProviders(config *configs.Config, state *states.State, 
 	// are shimming our vt100 output to the legacy console API on Windows.
 	evts := &providercache.InstallerEvents{
 		PendingProviders: func(reqs map[addrs.Provider]getproviders.VersionConstraints) {
-			c.Ui.Output(c.Colorize().Color(
-				"\n[reset][bold]Initializing provider plugins...",
-			))
+
 		},
 		ProviderAlreadyInstalled: func(provider addrs.Provider, selectedVersion getproviders.Version) {
-			c.Ui.Info(fmt.Sprintf("- Using previously-installed %s v%s", provider.ForDisplay(), selectedVersion))
+			//c.Ui.Info(fmt.Sprintf("- Using previously-installed %s v%s", provider.ForDisplay(), selectedVersion))
 		},
 		BuiltInProviderAvailable: func(provider addrs.Provider) {
-			c.Ui.Info(fmt.Sprintf("- %s is built in to Terraform", provider.ForDisplay()))
+			// c.Ui.Info(fmt.Sprintf("- %s is built in to Terraform", provider.ForDisplay()))
 		},
 		BuiltInProviderFailure: func(provider addrs.Provider, err error) {
 			diags = diags.Append(tfdiags.Sourceless(
@@ -567,20 +799,20 @@ func (c *InitCommand) getProviders(config *configs.Config, state *states.State, 
 		},
 		QueryPackagesBegin: func(provider addrs.Provider, versionConstraints getproviders.VersionConstraints, locked bool) {
 			if locked {
-				c.Ui.Info(fmt.Sprintf("- Reusing previous version of %s from the dependency lock file", provider.ForDisplay()))
+				// c.Ui.Info(fmt.Sprintf("- Reusing previous version of %s from the dependency lock file", provider.ForDisplay()))
 			} else {
 				if len(versionConstraints) > 0 {
-					c.Ui.Info(fmt.Sprintf("- Finding %s versions matching %q...", provider.ForDisplay(), getproviders.VersionConstraintsString(versionConstraints)))
+					// c.Ui.Info(fmt.Sprintf("- Finding %s versions matching %q...", provider.ForDisplay(), getproviders.VersionConstraintsString(versionConstraints)))
 				} else {
-					c.Ui.Info(fmt.Sprintf("- Finding latest version of %s...", provider.ForDisplay()))
+					// c.Ui.Info(fmt.Sprintf("- Finding latest version of %s...", provider.ForDisplay()))
 				}
 			}
 		},
 		LinkFromCacheBegin: func(provider addrs.Provider, version getproviders.Version, cacheRoot string) {
-			c.Ui.Info(fmt.Sprintf("- Using %s v%s from the shared cache directory", provider.ForDisplay(), version))
+			// c.Ui.Info(fmt.Sprintf("- Using %s v%s from the shared cache directory", provider.ForDisplay(), version))
 		},
 		FetchPackageBegin: func(provider addrs.Provider, version getproviders.Version, location getproviders.PackageLocation) {
-			c.Ui.Info(fmt.Sprintf("- Installing %s v%s...", provider.ForDisplay(), version))
+			// c.Ui.Info(fmt.Sprintf("- Installing %s v%s...", provider.ForDisplay(), version))
 		},
 		QueryPackagesFailure: func(provider addrs.Provider, err error) {
 			switch errorTy := err.(type) {
@@ -780,7 +1012,7 @@ func (c *InitCommand) getProviders(config *configs.Config, state *states.State, 
 				keyID = c.Colorize().Color(fmt.Sprintf(", key ID [reset][bold]%s[reset]", keyID))
 			}
 
-			c.Ui.Info(fmt.Sprintf("- Installed %s v%s (%s%s)", provider.ForDisplay(), version, authResult, keyID))
+			// c.Ui.Info(fmt.Sprintf("- Installed %s v%s (%s%s)", provider.ForDisplay(), version, authResult, keyID))
 		},
 		ProvidersLockUpdated: func(provider addrs.Provider, version getproviders.Version, localHashes []getproviders.Hash, signedHashes []getproviders.Hash, priorHashes []getproviders.Hash) {
 			// We're going to use this opportunity to track if we have any
@@ -826,9 +1058,9 @@ func (c *InitCommand) getProviders(config *configs.Config, state *states.State, 
 				}
 			}
 			if thirdPartySigned {
-				c.Ui.Info(fmt.Sprintf("\nPartner and community providers are signed by their developers.\n" +
-					"If you'd like to know more about provider signing, you can read about it here:\n" +
-					"https://www.terraform.io/docs/cli/plugins/signing.html"))
+				// c.Ui.Info(fmt.Sprintf("\nPartner and community providers are signed by their developers.\n" +
+				// 	"If you'd like to know more about provider signing, you can read about it here:\n" +
+				// 	"https://www.terraform.io/docs/cli/plugins/signing.html"))
 			}
 		},
 	}
@@ -837,7 +1069,7 @@ func (c *InitCommand) getProviders(config *configs.Config, state *states.State, 
 	mode := providercache.InstallNewProvidersOnly
 	if upgrade {
 		if flagLockfile == "readonly" {
-			c.Ui.Error("The -upgrade flag conflicts with -lockfile=readonly.")
+			// c.Ui.Error("The -upgrade flag conflicts with -lockfile=readonly.")
 			return true, true, diags
 		}
 
@@ -845,8 +1077,8 @@ func (c *InitCommand) getProviders(config *configs.Config, state *states.State, 
 	}
 	newLocks, err := inst.EnsureProviderVersions(ctx, reqs, mode)
 	if ctx.Err() == context.Canceled {
-		c.showDiagnostics(diags)
-		c.Ui.Error("Provider installation was canceled by an interrupt signal.")
+		// c.showDiagnostics(diags)
+		// c.Ui.Error("Provider installation was canceled by an interrupt signal.")
 		return true, true, diags
 	}
 	if err != nil {
@@ -906,24 +1138,24 @@ func (c *InitCommand) getProviders(config *configs.Config, state *states.State, 
 					getproviders.CurrentPlatform.String())))
 		}
 
-		if previousLocks.Empty() {
-			// A change from empty to non-empty is special because it suggests
-			// we're running "terraform init" for the first time against a
-			// new configuration. In that case we'll take the opportunity to
-			// say a little about what the dependency lock file is, for new
-			// users or those who are upgrading from a previous Terraform
-			// version that didn't have dependency lock files.
-			c.Ui.Output(c.Colorize().Color(`
-Terraform has created a lock file [bold].terraform.lock.hcl[reset] to record the provider
-selections it made above. Include this file in your version control repository
-so that Terraform can guarantee to make the same selections by default when
-you run "terraform init" in the future.`))
-		} else {
-			c.Ui.Output(c.Colorize().Color(`
-Terraform has made some changes to the provider dependency selections recorded
-in the .terraform.lock.hcl file. Review those changes and commit them to your
-version control system if they represent changes you intended to make.`))
-		}
+		// 		if previousLocks.Empty() {
+		// 			// A change from empty to non-empty is special because it suggests
+		// 			// we're running "terraform init" for the first time against a
+		// 			// new configuration. In that case we'll take the opportunity to
+		// 			// say a little about what the dependency lock file is, for new
+		// 			// users or those who are upgrading from a previous Terraform
+		// 			// version that didn't have dependency lock files.
+		// 			c.Ui.Output(c.Colorize().Color(`
+		// Terraform has created a lock file [bold].terraform.lock.hcl[reset] to record the provider
+		// selections it made above. Include this file in your version control repository
+		// so that Terraform can guarantee to make the same selections by default when
+		// you run "terraform init" in the future.`))
+		// 		} else {
+		// 			c.Ui.Output(c.Colorize().Color(`
+		// Terraform has made some changes to the provider dependency selections recorded
+		// in the .terraform.lock.hcl file. Review those changes and commit them to your
+		// version control system if they represent changes you intended to make.`))
+		// 		}
 
 		moreDiags = c.replaceLockedDependencies(newLocks)
 		diags = diags.Append(moreDiags)

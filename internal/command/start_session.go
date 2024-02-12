@@ -395,6 +395,12 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 
 			b, _ := json.Marshal(moves)
 			view.PrintData(b)
+
+		case "init":
+			cmd := InitCommand{Meta: c.Meta}
+			diags := cmd.DoInit(parts[1:])
+			b, _ := json.Marshal(diags.Err().Error())
+			view.PrintData(b)
 		case "apply-config":
 			rAddr, d := addrs.ParseAbsResourceStr(parts[1])
 			if d.HasErrors() {
