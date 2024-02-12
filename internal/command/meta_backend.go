@@ -1092,8 +1092,8 @@ func (m *Meta) backend_C_r_s(c *configs.Backend, cHash int, sMgr *clistate.Local
 	// By now the backend is successfully configured.  If using Terraform Cloud, the success
 	// message is handled as part of the final init message
 	if _, ok := b.(*cloud.Cloud); !ok {
-		m.Ui.Output(m.Colorize().Color(fmt.Sprintf(
-			"[reset][green]\n"+strings.TrimSpace(successBackendSet), s.Backend.Type)))
+		// m.Ui.Output(m.Colorize().Color(fmt.Sprintf(
+		// 	"[reset][green]\n"+strings.TrimSpace(successBackendSet), s.Backend.Type)))
 	}
 
 	return b, diags
@@ -1225,8 +1225,8 @@ func (m *Meta) backend_C_r_S_changed(c *configs.Backend, cHash int, sMgr *clista
 		// By now the backend is successfully configured.  If using Terraform Cloud, the success
 		// message is handled as part of the final init message
 		if _, ok := b.(*cloud.Cloud); !ok {
-			m.Ui.Output(m.Colorize().Color(fmt.Sprintf(
-				"[reset][green]\n"+strings.TrimSpace(successBackendSet), s.Backend.Type)))
+			// m.Ui.Output(m.Colorize().Color(fmt.Sprintf(
+			// 	"[reset][green]\n"+strings.TrimSpace(successBackendSet), s.Backend.Type)))
 		}
 	}
 
