@@ -83,23 +83,11 @@ func (c *StartSessionCommand) Run(rawArgs []string) int {
 
 	// Prepare the backend, passing the plan file if present, and the
 	// backend-specific arguments
-	be, beDiags := c.PrepareBackend(args.State, args.ViewType)
-	diags = diags.Append(beDiags)
-	if diags.HasErrors() {
-		view.Diagnostics(diags)
-		return 1
-	}
-
-	diags = diags.Append(c.initStateManager(be))
-	if diags.HasErrors() {
-		view.Diagnostics(diags)
-		return 1
-	}
 
 	view.Ready()
 	c.Cache = terraform.NewCache()
 
-	return c.modePiped(view, be, args)
+	return c.modePiped(view, args)
 }
 
 func (c *StartSessionCommand) initStateManager(be backend.Enhanced) tfdiags.Diagnostics {
@@ -276,7 +264,7 @@ func (c *StartSessionCommand) getConfig() (*configs.Config, tfdiags.Diagnostics)
 	return c.Config, nil
 }
 
-func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enhanced, args *arguments.StartSession) int {
+func (c *StartSessionCommand) modePiped(view views.StartSession, args *arguments.StartSession) int {
 	needsRefresh := args.Operation.Refresh
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
@@ -284,6 +272,30 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 	c.KeepAlive = true
 	ops, _ := c.contextOpts()
 	tfCtx, _ := terraform.NewContext(ops)
+	var be backend.Enhanced
+
+	getBackend := func() (backend.Enhanced, tfdiags.Diagnostics) {
+		if be != nil {
+			return be, nil
+		}
+
+		var diags tfdiags.Diagnostics
+
+		b, beDiags := c.PrepareBackend(args.State, args.ViewType)
+		diags = diags.Append(beDiags)
+		if diags.HasErrors() {
+			return nil, diags
+		}
+
+		diags = diags.Append(c.initStateManager(b))
+		if diags.HasErrors() {
+			return nil, diags
+		}
+
+		be = b
+
+		return b, diags
+	}
 
 	for scanner.Scan() {
 		token := scanner.Text()
@@ -294,6 +306,12 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 
 		switch parts[0] {
 		case "apply":
+			be, diags := getBackend()
+			if diags.HasErrors() {
+				view.Diagnostics(diags)
+				continue
+			}
+
 			common, rawArgs := arguments.ParseView(parts[1:])
 			c.Meta.useTests = common.UseTests
 			c.Meta.modules = common.Modules
@@ -312,6 +330,12 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 				continue
 			}
 		case "plan":
+			be, diags := getBackend()
+			if diags.HasErrors() {
+				view.Diagnostics(diags)
+				continue
+			}
+
 			common, rawArgs := arguments.ParseView(parts[1:])
 			c.Meta.useTests = common.UseTests
 			c.Meta.modules = common.Modules
@@ -335,6 +359,12 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 			c.EvalContext = nil
 			c.Config = nil
 		case "set-state":
+			_, diags := getBackend()
+			if diags.HasErrors() {
+				view.Diagnostics(diags)
+				continue
+			}
+
 			filename := parts[1]
 			data, err := os.ReadFile(filename)
 			if err != nil {
@@ -354,6 +384,12 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 				continue
 			}
 		case "get-state":
+			_, diags := getBackend()
+			if diags.HasErrors() {
+				view.Diagnostics(diags)
+				continue
+			}
+
 			stateFile := statemgr.Export(c.StateManager)
 			if stateFile == nil {
 				stateFile = &statefile.File{}
@@ -368,6 +404,12 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 
 			view.PrintData(json.RawMessage(buf.Bytes()))
 		case "find-moves":
+			_, diags := getBackend()
+			if diags.HasErrors() {
+				view.Diagnostics(diags)
+				continue
+			}
+
 			if c.StateManager == nil {
 				sm, _ := be.StateMgr(backend.DefaultStateName)
 				err := sm.RefreshState()
@@ -399,8 +441,9 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, be backend.Enha
 		case "init":
 			cmd := InitCommand{Meta: c.Meta}
 			diags := cmd.DoInit(parts[1:])
-			b, _ := json.Marshal(diags.Err().Error())
-			view.PrintData(b)
+			if diags != nil && diags.HasErrors() {
+				view.Diagnostics(diags)
+			}
 		case "apply-config":
 			rAddr, d := addrs.ParseAbsResourceStr(parts[1])
 			if d.HasErrors() {
