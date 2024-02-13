@@ -378,7 +378,7 @@ func (c *StartSessionCommand) modePiped(view views.StartSession, args *arguments
 				continue
 			}
 
-			err = statemgr.Import(stateFile, c.StateManager, false)
+			err = statemgr.Import(stateFile, c.StateManager, true)
 			if err != nil {
 				view.Diagnostics(tfdiags.Diagnostics{}.Append(err))
 				continue
