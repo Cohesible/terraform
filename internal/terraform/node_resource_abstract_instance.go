@@ -1480,7 +1480,7 @@ func (n *NodeAbstractResourceInstance) readDataSource(ctx EvalContext, configVal
 
 	// TODO: check err?
 	// TODO: compare marks too, otherwise
-	if n.cache != nil {
+	if n.cache != nil && !n.ignoreCache {
 		cachedVal, _ := n.cache.GetCachedValue(n.Addr.ConfigResource(), configVal)
 		if cachedVal != nil {
 			return *cachedVal, nil

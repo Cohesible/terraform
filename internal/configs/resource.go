@@ -112,6 +112,8 @@ type Resource struct {
 	// For all other resource modes, this field is nil.
 	Managed *ManagedResource
 
+	IgnoreCache bool
+
 	// Container links a scoped resource back up to the resources that contains
 	// it. This field is referenced during static analysis to check whether any
 	// references are also made from within the same container.
@@ -576,10 +578,17 @@ func decodeDataBlock(block *hcl.Block, override, nested bool) (*Resource, hcl.Di
 			lcContent, lcDiags := block.Body.Content(resourceLifecycleBlockSchema)
 			diags = append(diags, lcDiags...)
 
-			// All of the attributes defined for resource lifecycle are for
+			// Almost all of the attributes defined for resource lifecycle are for
 			// managed resources only, so we can emit a common error message
 			// for any given attributes that HCL accepted.
 			for name, attr := range lcContent.Attributes {
+				if name == "force_refresh" {
+					valDiags := gohcl.DecodeExpression(attr.Expr, nil, &r.IgnoreCache)
+					diags = append(diags, valDiags...)
+
+					continue
+				}
+
 				diags = append(diags, &hcl.Diagnostic{
 					Severity: hcl.DiagError,
 					Summary:  "Invalid data resource lifecycle argument",

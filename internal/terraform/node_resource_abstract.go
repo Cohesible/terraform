@@ -84,6 +84,10 @@ type NodeAbstractResource struct {
 	generateConfigPath string
 
 	cache *Cache
+
+	// Forces the data source to always produce a new value regardless of where
+	// or not the config has changed. The result is still placed in the cache.
+	ignoreCache bool
 }
 
 var (

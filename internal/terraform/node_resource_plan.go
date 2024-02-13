@@ -338,6 +338,7 @@ func (n *nodeExpandPlannableResource) resourceInstanceSubgraph(ctx EvalContext, 
 		a.preDestroyRefresh = n.preDestroyRefresh
 		a.generateConfigPath = n.generateConfigPath
 		a.cache = n.cache
+		a.ignoreCache = n.ignoreCache
 
 		var skipRefresh bool
 		if n.Config.Managed != nil && n.Config.Managed.ForceRefresh {

@@ -150,6 +150,7 @@ func (t *ConfigTransformer) transformSingle(g *Graph, config *configs.Config, ge
 			},
 			importTargets: imports,
 			cache:         t.Cache,
+			ignoreCache:   r.IgnoreCache,
 		}
 
 		var node dag.Vertex = abstract
