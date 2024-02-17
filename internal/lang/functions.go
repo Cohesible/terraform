@@ -241,6 +241,8 @@ type NameGenerator struct {
 	previousTime int64 // ms
 }
 
+const namePrefix = "synapse"
+
 func (g *NameGenerator) generateName(maxLength int, sep string) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -253,12 +255,12 @@ func (g *NameGenerator) generateName(maxLength int, sep string) string {
 
 	g.counter += 1
 	id := strings.Join([]string{strconv.FormatInt(t, 10), strconv.Itoa(g.counter)}, sep)
-	end := len(id) - (maxLength + 3 + len(sep) - 1)
+	end := len(id) - (maxLength + len(namePrefix) + len(sep) - 1)
 	if end > 0 {
 		id = id[:end]
 	}
 
-	return strings.Join([]string{"csc", id}, sep)
+	return strings.Join([]string{namePrefix, id}, sep)
 }
 
 func MakeGenerateIdentifierFunc(data Data, names *NameGenerator) function.Function {
