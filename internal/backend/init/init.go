@@ -14,18 +14,8 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	backendLocal "github.com/hashicorp/terraform/internal/backend/local"
-	backendRemote "github.com/hashicorp/terraform/internal/backend/remote"
-	backendAzure "github.com/hashicorp/terraform/internal/backend/remote-state/azure"
-	backendConsul "github.com/hashicorp/terraform/internal/backend/remote-state/consul"
-	backendCos "github.com/hashicorp/terraform/internal/backend/remote-state/cos"
-	backendGCS "github.com/hashicorp/terraform/internal/backend/remote-state/gcs"
 	backendHTTP "github.com/hashicorp/terraform/internal/backend/remote-state/http"
 	backendInmem "github.com/hashicorp/terraform/internal/backend/remote-state/inmem"
-	backendKubernetes "github.com/hashicorp/terraform/internal/backend/remote-state/kubernetes"
-	backendOSS "github.com/hashicorp/terraform/internal/backend/remote-state/oss"
-	backendPg "github.com/hashicorp/terraform/internal/backend/remote-state/pg"
-	backendS3 "github.com/hashicorp/terraform/internal/backend/remote-state/s3"
-	backendCloud "github.com/hashicorp/terraform/internal/cloud"
 )
 
 // backends is the list of available backends. This is a global variable
@@ -52,34 +42,14 @@ func Init(services *disco.Disco) {
 	defer backendsLock.Unlock()
 
 	backends = map[string]backend.InitFn{
-		"local":  func() backend.Backend { return backendLocal.New() },
-		"remote": func() backend.Backend { return backendRemote.New(services) },
+		"local": func() backend.Backend { return backendLocal.New() },
 
 		// Remote State backends.
-		"azurerm":    func() backend.Backend { return backendAzure.New() },
-		"consul":     func() backend.Backend { return backendConsul.New() },
-		"cos":        func() backend.Backend { return backendCos.New() },
-		"gcs":        func() backend.Backend { return backendGCS.New() },
-		"http":       func() backend.Backend { return backendHTTP.New() },
-		"inmem":      func() backend.Backend { return backendInmem.New() },
-		"kubernetes": func() backend.Backend { return backendKubernetes.New() },
-		"oss":        func() backend.Backend { return backendOSS.New() },
-		"pg":         func() backend.Backend { return backendPg.New() },
-		"s3":         func() backend.Backend { return backendS3.New() },
-
-		// Terraform Cloud 'backend'
-		// This is an implementation detail only, used for the cloud package
-		"cloud": func() backend.Backend { return backendCloud.New(services) },
+		"http":  func() backend.Backend { return backendHTTP.New() },
+		"inmem": func() backend.Backend { return backendInmem.New() },
 	}
 
-	RemovedBackends = map[string]string{
-		"artifactory": `The "artifactory" backend is not supported in Terraform v1.3 or later.`,
-		"azure":       `The "azure" backend name has been removed, please use "azurerm".`,
-		"etcd":        `The "etcd" backend is not supported in Terraform v1.3 or later.`,
-		"etcdv3":      `The "etcdv3" backend is not supported in Terraform v1.3 or later.`,
-		"manta":       `The "manta" backend is not supported in Terraform v1.3 or later.`,
-		"swift":       `The "swift" backend is not supported in Terraform v1.3 or later.`,
-	}
+	RemovedBackends = map[string]string{}
 }
 
 // Backend returns the initialization factory for the given backend, or

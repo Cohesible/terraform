@@ -28,7 +28,6 @@ import (
 	"github.com/hashicorp/terraform/internal/command/arguments"
 	"github.com/hashicorp/terraform/internal/command/format"
 	"github.com/hashicorp/terraform/internal/command/views"
-	"github.com/hashicorp/terraform/internal/command/webbrowser"
 	"github.com/hashicorp/terraform/internal/command/workdir"
 	"github.com/hashicorp/terraform/internal/configs"
 	"github.com/hashicorp/terraform/internal/configs/configload"
@@ -128,10 +127,6 @@ type Meta struct {
 	// and determines where a distribution package for a particular
 	// provider version can be obtained.
 	ProviderSource getproviders.Source
-
-	// BrowserLauncher is used by commands that need to open a URL in a
-	// web browser.
-	BrowserLauncher webbrowser.Launcher
 
 	// When this channel is closed, the command will be cancelled.
 	ShutdownCh <-chan struct{}
@@ -720,10 +715,8 @@ var errInvalidWorkspaceNameEnvVar = fmt.Errorf("Invalid workspace name set using
 // Workspace returns the name of the currently configured workspace, corresponding
 // to the desired named state.
 func (m *Meta) Workspace() (string, error) {
-	current, overridden := m.WorkspaceOverridden()
-	if overridden && !validWorkspaceName(current) {
-		return "", errInvalidWorkspaceNameEnvVar
-	}
+	current, _ := m.WorkspaceOverridden()
+
 	return current, nil
 }
 

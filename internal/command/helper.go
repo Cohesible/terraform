@@ -5,7 +5,6 @@ package command
 
 import (
 	"github.com/hashicorp/terraform/internal/backend"
-	"github.com/hashicorp/terraform/internal/cloud"
 )
 
 const failedToLoadSchemasMessage = `
@@ -25,7 +24,5 @@ of the state:
 `
 
 func isCloudMode(b backend.Enhanced) bool {
-	_, ok := b.(*cloud.Cloud)
-
-	return ok
+	return false
 }

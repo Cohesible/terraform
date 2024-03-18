@@ -17,7 +17,6 @@ import (
 	"github.com/hashicorp/terraform/internal/command"
 	"github.com/hashicorp/terraform/internal/command/cliconfig"
 	"github.com/hashicorp/terraform/internal/command/views"
-	"github.com/hashicorp/terraform/internal/command/webbrowser"
 	"github.com/hashicorp/terraform/internal/getproviders"
 	pluginDiscovery "github.com/hashicorp/terraform/internal/plugin/discovery"
 	"github.com/hashicorp/terraform/internal/terminal"
@@ -91,8 +90,7 @@ func initCommands(
 		GlobalPluginDirs: globalPluginDirs(),
 		Ui:               Ui,
 
-		Services:        services,
-		BrowserLauncher: webbrowser.NewNativeLauncher(),
+		Services: services,
 
 		RunningInAutomation: inAutomation,
 		CLIConfigDir:        configDir,
@@ -122,69 +120,10 @@ func initCommands(
 			}, nil
 		},
 
-		"console": func() (cli.Command, error) {
-			return &command.ConsoleCommand{
-				Meta: meta,
-			}, nil
-		},
-
 		"destroy": func() (cli.Command, error) {
 			return &command.ApplyCommand{
 				Meta:    meta,
 				Destroy: true,
-			}, nil
-		},
-
-		"env": func() (cli.Command, error) {
-			return &command.WorkspaceCommand{
-				Meta:       meta,
-				LegacyName: true,
-			}, nil
-		},
-
-		"env list": func() (cli.Command, error) {
-			return &command.WorkspaceListCommand{
-				Meta:       meta,
-				LegacyName: true,
-			}, nil
-		},
-
-		"env select": func() (cli.Command, error) {
-			return &command.WorkspaceSelectCommand{
-				Meta:       meta,
-				LegacyName: true,
-			}, nil
-		},
-
-		"env new": func() (cli.Command, error) {
-			return &command.WorkspaceNewCommand{
-				Meta:       meta,
-				LegacyName: true,
-			}, nil
-		},
-
-		"env delete": func() (cli.Command, error) {
-			return &command.WorkspaceDeleteCommand{
-				Meta:       meta,
-				LegacyName: true,
-			}, nil
-		},
-
-		"fmt": func() (cli.Command, error) {
-			return &command.FmtCommand{
-				Meta: meta,
-			}, nil
-		},
-
-		"get": func() (cli.Command, error) {
-			return &command.GetCommand{
-				Meta: meta,
-			}, nil
-		},
-
-		"graph": func() (cli.Command, error) {
-			return &command.GraphCommand{
-				Meta: meta,
 			}, nil
 		},
 
@@ -200,18 +139,6 @@ func initCommands(
 			}, nil
 		},
 
-		"login": func() (cli.Command, error) {
-			return &command.LoginCommand{
-				Meta: meta,
-			}, nil
-		},
-
-		"logout": func() (cli.Command, error) {
-			return &command.LogoutCommand{
-				Meta: meta,
-			}, nil
-		},
-
 		"metadata": func() (cli.Command, error) {
 			return &command.MetadataCommand{
 				Meta: meta,
@@ -220,12 +147,6 @@ func initCommands(
 
 		"metadata functions": func() (cli.Command, error) {
 			return &command.MetadataFunctionsCommand{
-				Meta: meta,
-			}, nil
-		},
-
-		"output": func() (cli.Command, error) {
-			return &command.OutputCommand{
 				Meta: meta,
 			}, nil
 		},
@@ -290,18 +211,6 @@ func initCommands(
 			}, nil
 		},
 
-		"test": func() (cli.Command, error) {
-			return &command.TestCommand{
-				Meta: meta,
-			}, nil
-		},
-
-		"validate": func() (cli.Command, error) {
-			return &command.ValidateCommand{
-				Meta: meta,
-			}, nil
-		},
-
 		"version": func() (cli.Command, error) {
 			return &command.VersionCommand{
 				Meta:              meta,
@@ -313,42 +222,6 @@ func initCommands(
 
 		"untaint": func() (cli.Command, error) {
 			return &command.UntaintCommand{
-				Meta: meta,
-			}, nil
-		},
-
-		"workspace": func() (cli.Command, error) {
-			return &command.WorkspaceCommand{
-				Meta: meta,
-			}, nil
-		},
-
-		"workspace list": func() (cli.Command, error) {
-			return &command.WorkspaceListCommand{
-				Meta: meta,
-			}, nil
-		},
-
-		"workspace select": func() (cli.Command, error) {
-			return &command.WorkspaceSelectCommand{
-				Meta: meta,
-			}, nil
-		},
-
-		"workspace show": func() (cli.Command, error) {
-			return &command.WorkspaceShowCommand{
-				Meta: meta,
-			}, nil
-		},
-
-		"workspace new": func() (cli.Command, error) {
-			return &command.WorkspaceNewCommand{
-				Meta: meta,
-			}, nil
-		},
-
-		"workspace delete": func() (cli.Command, error) {
-			return &command.WorkspaceDeleteCommand{
 				Meta: meta,
 			}, nil
 		},

@@ -6,24 +6,19 @@ package providercache
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
-	getter "github.com/hashicorp/go-getter"
+	"archive/zip"
 
 	"github.com/hashicorp/terraform/internal/copy"
 	"github.com/hashicorp/terraform/internal/getproviders"
 	"github.com/hashicorp/terraform/internal/httpclient"
 )
-
-// We borrow the "unpack a zip file into a target directory" logic from
-// go-getter, even though we're not otherwise using go-getter here.
-// (We don't need the same flexibility as we have for modules, because
-// providers _always_ come from provider registries, which have a very
-// specific protocol and set of expectations.)
-var unzip = getter.ZipDecompressor{}
 
 func installFromHTTPURL(ctx context.Context, meta getproviders.PackageMeta, targetDir string, allowedHashes []getproviders.Hash) (*getproviders.PackageAuthenticationResult, error) {
 	url := meta.Location.String()
@@ -63,9 +58,7 @@ func installFromHTTPURL(ctx context.Context, meta getproviders.PackageMeta, targ
 	defer f.Close()
 	defer os.Remove(f.Name())
 
-	// We'll borrow go-getter's "cancelable copy" implementation here so that
-	// the download can potentially be interrupted partway through.
-	n, err := getter.Copy(ctx, f, resp.Body)
+	n, err := io.Copy(f, resp.Body)
 	if err == nil && n < resp.ContentLength {
 		err = fmt.Errorf("incorrect response size: expected %d bytes, but got %d bytes", resp.ContentLength, n)
 	}
@@ -127,21 +120,58 @@ func installFromLocalArchive(ctx context.Context, meta getproviders.PackageMeta,
 	}
 
 	filename := meta.Location.String()
-
-	// NOTE: We're not checking whether there's already a directory at
-	// targetDir with some files in it. Packages are supposed to be immutable
-	// and therefore we'll just be overwriting all of the existing files with
-	// their same contents unless something unusual is happening. If something
-	// unusual _is_ happening then this will produce something that doesn't
-	// match the allowed hashes and so our caller should catch that after
-	// we return if so.
-
-	err := unzip.Decompress(targetDir, filename, true, 0000)
-	if err != nil {
+	if err := unzip(filename, targetDir); err != nil {
 		return authResult, err
 	}
 
 	return authResult, nil
+}
+
+func unzip(source, destination string) error {
+	reader, err := zip.OpenReader(source)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	for _, f := range reader.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+
+		if err := unzipFile(f, destination); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func unzipFile(f *zip.File, destination string) error {
+	filePath := filepath.Join(destination, f.Name)
+	if !strings.HasPrefix(filePath, filepath.Clean(destination)+string(os.PathSeparator)) {
+		return fmt.Errorf("invalid file path: %s", filePath)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
+		return err
+	}
+
+	destinationFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+	if err != nil {
+		return err
+	}
+	defer destinationFile.Close()
+
+	zippedFile, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer zippedFile.Close()
+
+	_, err = io.Copy(destinationFile, zippedFile)
+
+	return err
 }
 
 // installFromLocalDir is the implementation of both installing a package from

@@ -21,7 +21,6 @@ import (
 	"github.com/hashicorp/terraform/internal/depsfile"
 	"github.com/hashicorp/terraform/internal/getproviders"
 	"github.com/hashicorp/terraform/internal/logging"
-	"github.com/hashicorp/terraform/internal/moduletest"
 	tfplugin "github.com/hashicorp/terraform/internal/plugin"
 	tfplugin6 "github.com/hashicorp/terraform/internal/plugin6"
 	"github.com/hashicorp/terraform/internal/providercache"
@@ -355,9 +354,6 @@ func (m *Meta) internalProviders() map[string]providers.Factory {
 		},
 		"synapse": func() (providers.Interface, error) {
 			return synapseProvider.NewProvider(), nil
-		},
-		"test": func() (providers.Interface, error) {
-			return moduletest.NewProvider(), nil
 		},
 	}
 }

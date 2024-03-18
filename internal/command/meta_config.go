@@ -251,37 +251,6 @@ func (m *Meta) installModules(rootDir string, upgrade bool, hooks initwd.ModuleI
 	return false, diags
 }
 
-// initDirFromModule initializes the given directory (which should be
-// pre-verified as empty by the caller) by copying the source code from the
-// given module address.
-//
-// Internally this runs similar steps to installModules.
-// The given hooks object will be notified of installation progress, which
-// can then be relayed to the end-user. The uiModuleInstallHooks type in
-// this package has a reasonable implementation for displaying notifications
-// via a provided cli.Ui.
-func (m *Meta) initDirFromModule(targetDir string, addr string, hooks initwd.ModuleInstallHooks) (abort bool, diags tfdiags.Diagnostics) {
-	// Installation can be aborted by interruption signals
-	ctx, done := m.InterruptibleContext()
-	defer done()
-
-	loader, err := m.initConfigLoader()
-	if err != nil {
-		diags = diags.Append(err)
-		return true, diags
-	}
-
-	targetDir = m.normalizePath(targetDir)
-	moreDiags := initwd.DirFromModule(ctx, loader, targetDir, m.modulesDir(), addr, m.registryClient(), hooks)
-	diags = diags.Append(moreDiags)
-	if ctx.Err() == context.Canceled {
-		m.showDiagnostics(diags)
-		m.Ui.Error("Module initialization was canceled by an interrupt signal.")
-		return true, diags
-	}
-	return false, diags
-}
-
 // inputForSchema uses interactive prompts to try to populate any
 // not-yet-populated required attributes in the given object value to
 // comply with the given schema.

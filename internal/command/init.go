@@ -19,7 +19,6 @@ import (
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/backend"
 	backendInit "github.com/hashicorp/terraform/internal/backend/init"
-	"github.com/hashicorp/terraform/internal/cloud"
 	"github.com/hashicorp/terraform/internal/command/arguments"
 	"github.com/hashicorp/terraform/internal/configs"
 	"github.com/hashicorp/terraform/internal/configs/configschema"
@@ -111,38 +110,38 @@ func (c *InitCommand) Run(args []string) int {
 	// to output a newline before the success message
 	var header bool
 
-	if flagFromModule != "" {
-		src := flagFromModule
+	// if flagFromModule != "" {
+	// 	src := flagFromModule
 
-		empty, err := configs.IsEmptyDir(path)
-		if err != nil {
-			c.Ui.Error(fmt.Sprintf("Error validating destination directory: %s", err))
-			return 1
-		}
-		if !empty {
-			c.Ui.Error(strings.TrimSpace(errInitCopyNotEmpty))
-			return 1
-		}
+	// 	empty, err := configs.IsEmptyDir(path)
+	// 	if err != nil {
+	// 		c.Ui.Error(fmt.Sprintf("Error validating destination directory: %s", err))
+	// 		return 1
+	// 	}
+	// 	if !empty {
+	// 		c.Ui.Error(strings.TrimSpace(errInitCopyNotEmpty))
+	// 		return 1
+	// 	}
 
-		c.Ui.Output(c.Colorize().Color(fmt.Sprintf(
-			"[reset][bold]Copying configuration[reset] from %q...", src,
-		)))
-		header = true
+	// 	c.Ui.Output(c.Colorize().Color(fmt.Sprintf(
+	// 		"[reset][bold]Copying configuration[reset] from %q...", src,
+	// 	)))
+	// 	header = true
 
-		hooks := uiModuleInstallHooks{
-			Ui:             c.Ui,
-			ShowLocalPaths: false, // since they are in a weird location for init
-		}
+	// 	hooks := uiModuleInstallHooks{
+	// 		Ui:             c.Ui,
+	// 		ShowLocalPaths: false, // since they are in a weird location for init
+	// 	}
 
-		initDirFromModuleAbort, initDirFromModuleDiags := c.initDirFromModule(path, src, hooks)
-		diags = diags.Append(initDirFromModuleDiags)
-		if initDirFromModuleAbort || initDirFromModuleDiags.HasErrors() {
-			c.showDiagnostics(diags)
-			return 1
-		}
+	// 	initDirFromModuleAbort, initDirFromModuleDiags := c.initDirFromModule(path, src, hooks)
+	// 	diags = diags.Append(initDirFromModuleDiags)
+	// 	if initDirFromModuleAbort || initDirFromModuleDiags.HasErrors() {
+	// 		c.showDiagnostics(diags)
+	// 		return 1
+	// 	}
 
-		c.Ui.Output("")
-	}
+	// 	c.Ui.Output("")
+	// }
 
 	// If our directory is empty, then we're done. We can't get or set up
 	// the backend with an empty directory.
@@ -277,16 +276,6 @@ func (c *InitCommand) Run(args []string) int {
 		return 1
 	}
 
-	if cb, ok := back.(*cloud.Cloud); ok {
-		if c.RunningInAutomation {
-			if err := cb.AssertImportCompatible(config); err != nil {
-				diags = diags.Append(tfdiags.Sourceless(tfdiags.Error, "Compatibility error", err.Error()))
-				c.showDiagnostics(diags)
-				return 1
-			}
-		}
-	}
-
 	// Now that we have loaded all modules, check the module tree for missing providers.
 	providersOutput, providersAbort, providerDiags := c.getProviders(config, state, flagUpgrade, flagPluginPath, flagLockfile)
 	diags = diags.Append(providerDiags)
@@ -308,11 +297,7 @@ func (c *InitCommand) Run(args []string) int {
 	// by errors then we'll output them here so that the success message is
 	// still the final thing shown.
 	c.showDiagnostics(diags)
-	_, cloud := back.(*cloud.Cloud)
 	output := outputInitSuccess
-	if cloud {
-		output = outputInitSuccessCloud
-	}
 
 	c.Ui.Output(c.Colorize().Color(strings.TrimSpace(output)))
 
@@ -321,9 +306,7 @@ func (c *InitCommand) Run(args []string) int {
 		// some more detailed next steps that are appropriate for interactive
 		// shell usage.
 		output = outputInitSuccessCLI
-		if cloud {
-			output = outputInitSuccessCLICloud
-		}
+
 		c.Ui.Output(c.Colorize().Color(strings.TrimSpace(output)))
 	}
 	return 0
@@ -399,32 +382,32 @@ func (c *InitCommand) DoInit(args []string) tfdiags.Diagnostics {
 		return diags.Append(fmt.Sprintf("Error saving -plugin-path values: %s", err))
 	}
 
-	if flagFromModule != "" {
-		src := flagFromModule
+	// if flagFromModule != "" {
+	// 	src := flagFromModule
 
-		empty, err := configs.IsEmptyDir(path)
-		if err != nil {
-			return diags.Append(fmt.Sprintf("Error validating destination directory: %s", err))
-		}
-		if !empty {
-			return diags.Append(strings.TrimSpace(errInitCopyNotEmpty))
-		}
+	// 	empty, err := configs.IsEmptyDir(path)
+	// 	if err != nil {
+	// 		return diags.Append(fmt.Sprintf("Error validating destination directory: %s", err))
+	// 	}
+	// 	if !empty {
+	// 		return diags.Append(strings.TrimSpace(errInitCopyNotEmpty))
+	// 	}
 
-		// c.Ui.Output(c.Colorize().Color(fmt.Sprintf(
-		// 	"[reset][bold]Copying configuration[reset] from %q...", src,
-		// )))
+	// 	// c.Ui.Output(c.Colorize().Color(fmt.Sprintf(
+	// 	// 	"[reset][bold]Copying configuration[reset] from %q...", src,
+	// 	// )))
 
-		hooks := uiModuleInstallHooks{
-			Ui:             c.Ui,
-			ShowLocalPaths: false, // since they are in a weird location for init
-		}
+	// 	hooks := uiModuleInstallHooks{
+	// 		Ui:             c.Ui,
+	// 		ShowLocalPaths: false, // since they are in a weird location for init
+	// 	}
 
-		initDirFromModuleAbort, initDirFromModuleDiags := c.initDirFromModule(path, src, hooks)
-		diags = diags.Append(initDirFromModuleDiags)
-		if initDirFromModuleAbort || initDirFromModuleDiags.HasErrors() {
-			return diags
-		}
-	}
+	// 	initDirFromModuleAbort, initDirFromModuleDiags := c.initDirFromModule(path, src, hooks)
+	// 	diags = diags.Append(initDirFromModuleDiags)
+	// 	if initDirFromModuleAbort || initDirFromModuleDiags.HasErrors() {
+	// 		return diags
+	// 	}
+	// }
 
 	// If our directory is empty, then we're done. We can't get or set up
 	// the backend with an empty directory.
@@ -540,15 +523,6 @@ func (c *InitCommand) DoInit(args []string) tfdiags.Diagnostics {
 		return diags
 	}
 
-	if cb, ok := back.(*cloud.Cloud); ok {
-		if c.RunningInAutomation {
-			if err := cb.AssertImportCompatible(config); err != nil {
-				//c.showDiagnostics(diags)
-				return diags.Append(tfdiags.Sourceless(tfdiags.Error, "Compatibility error", err.Error()))
-			}
-		}
-	}
-
 	// Now that we have loaded all modules, check the module tree for missing providers.
 	_, providersAbort, providerDiags := c.getProviders(config, state, flagUpgrade, flagPluginPath, flagLockfile)
 	diags = diags.Append(providerDiags)
@@ -577,13 +551,13 @@ func (c *InitCommand) getModules(path string, earlyRoot *configs.Module, upgrade
 	// 	c.Ui.Output(c.Colorize().Color("[reset][bold]Initializing modules..."))
 	// }
 
-	hooks := uiModuleInstallHooks{
-		Ui:             c.Ui,
-		ShowLocalPaths: true,
-	}
+	// hooks := uiModuleInstallHooks{
+	// 	Ui:             c.Ui,
+	// 	ShowLocalPaths: true,
+	// }
 
-	installAbort, installDiags := c.installModules(path, upgrade, hooks)
-	diags = diags.Append(installDiags)
+	// installAbort, installDiags := c.installModules(path, upgrade, hooks)
+	// diags = diags.Append(installDiags)
 
 	// At this point, installModules may have generated error diags or been
 	// aborted by SIGINT. In any case we continue and the manifest as best
@@ -602,7 +576,7 @@ func (c *InitCommand) getModules(path string, earlyRoot *configs.Module, upgrade
 		}
 	}
 
-	return true, installAbort, diags
+	return true, false, diags
 }
 
 func (c *InitCommand) initCloud(root *configs.Module, extraConfig rawFlags) (be backend.Backend, output bool, diags tfdiags.Diagnostics) {
@@ -1408,10 +1382,6 @@ const outputInitSuccess = `
 [reset][bold][green]Terraform has been successfully initialized![reset][green]
 `
 
-const outputInitSuccessCloud = `
-[reset][bold][green]Terraform Cloud has been successfully initialized![reset][green]
-`
-
 const outputInitSuccessCLI = `[reset][green]
 You may now begin working with Terraform. Try running "terraform plan" to see
 any changes that are required for your infrastructure. All Terraform commands
@@ -1420,14 +1390,6 @@ should now work.
 If you ever set or change modules or backend configuration for Terraform,
 rerun this command to reinitialize your working directory. If you forget, other
 commands will detect it and remind you to do so if necessary.
-`
-
-const outputInitSuccessCLICloud = `[reset][green]
-You may now begin working with Terraform Cloud. Try running "terraform plan" to
-see any changes that are required for your infrastructure.
-
-If you ever set or change modules or Terraform Settings, run "terraform init"
-again to reinitialize your working directory.
 `
 
 // providerProtocolTooOld is a message sent to the CLI UI if the provider's

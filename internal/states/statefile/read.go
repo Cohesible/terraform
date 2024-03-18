@@ -102,6 +102,8 @@ func readState(src []byte) (*File, tfdiags.Diagnostics) {
 		return readStateV3(src)
 	case 4:
 		return readStateV4(src)
+	case 5:
+		return readStateV5(src)
 	default:
 		thisVersion := tfversion.SemVer.String()
 		creatingVersion := sniffJSONStateTerraformVersion(src)

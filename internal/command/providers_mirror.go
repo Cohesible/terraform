@@ -6,13 +6,14 @@ package command
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 
 	"github.com/apparentlymart/go-versions/versions"
-	"github.com/hashicorp/go-getter"
 	"github.com/hashicorp/terraform/internal/getproviders"
 	"github.com/hashicorp/terraform/internal/httpclient"
 	"github.com/hashicorp/terraform/internal/tfdiags"
@@ -108,14 +109,7 @@ func (c *ProvidersMirrorCommand) Run(args []string) int {
 		getproviders.NewRegistrySource(c.Services),
 	)
 
-	// Providers from registries always use HTTP, so we don't need the full
-	// generality of go-getter but it's still handy to use the HTTP getter
-	// as an easy way to download over HTTP into a file on disk.
-	httpGetter := getter.HttpGetter{
-		Client:                httpclient.New(),
-		Netrc:                 true,
-		XTerraformGetDisabled: true,
-	}
+	httpClient := httpclient.New()
 
 	// The following logic is similar to that used by the provider installer
 	// in package providercache, but different in a few ways:
@@ -201,6 +195,42 @@ func (c *ProvidersMirrorCommand) Run(args []string) int {
 				))
 				continue
 			}
+
+			genericErr := func(err error) tfdiags.Diagnostic {
+				return tfdiags.Sourceless(
+					tfdiags.Error,
+					"Cannot download provider release",
+					fmt.Sprintf("Failed to download %s v%s for %s: %s.", provider.String(), selected.String(), platform.String(), err),
+				)
+			}
+
+			downloadFile := func(resp *http.Response, dest string) error {
+				if err := os.MkdirAll(filepath.Dir(dest), os.ModePerm); err != nil {
+					return err
+				}
+
+				destinationFile, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.ModePerm)
+				if err != nil {
+					return err
+				}
+
+				n, err := io.Copy(destinationFile, resp.Body)
+				if err != nil {
+					return err
+				}
+				if n < resp.ContentLength {
+					return fmt.Errorf("incorrect response size: expected %d bytes, but got %d bytes", resp.ContentLength, n)
+				}
+
+				return nil
+			}
+
+			resp, err := httpClient.Get(urlObj.String())
+			if err != nil {
+				diags = diags.Append(genericErr(err))
+				continue
+			}
+
 			// targetPath is the path where we ultimately want to place the
 			// downloaded archive, but we'll place it initially at stagingPath
 			// so we can verify its checksums and signatures before making
@@ -208,15 +238,11 @@ func (c *ProvidersMirrorCommand) Run(args []string) int {
 			// does not follow the filesystem mirror file naming convention.)
 			targetPath := meta.PackedFilePath(outputDir)
 			stagingPath := filepath.Join(filepath.Dir(targetPath), "."+filepath.Base(targetPath))
-			err = httpGetter.GetFile(stagingPath, urlObj)
-			if err != nil {
-				diags = diags.Append(tfdiags.Sourceless(
-					tfdiags.Error,
-					"Cannot download provider release",
-					fmt.Sprintf("Failed to download %s v%s for %s: %s.", provider.String(), selected.String(), platform.String(), err),
-				))
+			if err := downloadFile(resp, stagingPath); err != nil {
+				diags = diags.Append(genericErr(err))
 				continue
 			}
+
 			if meta.Authentication != nil {
 				result, err := meta.Authentication.AuthenticatePackage(getproviders.PackageLocalArchive(stagingPath))
 				if err != nil {

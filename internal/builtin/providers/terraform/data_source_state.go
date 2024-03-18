@@ -8,7 +8,6 @@ import (
 	"log"
 
 	"github.com/hashicorp/terraform/internal/backend"
-	"github.com/hashicorp/terraform/internal/backend/remote"
 	"github.com/hashicorp/terraform/internal/configs/configschema"
 	"github.com/hashicorp/terraform/internal/providers"
 	"github.com/hashicorp/terraform/internal/tfdiags"
@@ -240,12 +239,6 @@ func getBackend(cfg cty.Value) (backend.Backend, cty.Value, tfdiags.Diagnostics)
 	diags = diags.Append(validateDiags)
 	if validateDiags.HasErrors() {
 		return nil, cty.NilVal, diags
-	}
-
-	// If this is the enhanced remote backend, we want to disable the version
-	// check, because this is a read-only operation
-	if rb, ok := b.(*remote.Remote); ok {
-		rb.IgnoreVersionConflict()
 	}
 
 	return b, newVal, diags

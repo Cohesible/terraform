@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	tfaddr "github.com/hashicorp/terraform-registry-address"
-	"github.com/hashicorp/terraform/internal/getmodules"
 )
 
 // ModuleSource is the general type for all three of the possible module source
@@ -267,53 +266,7 @@ type ModuleSourceRemote struct {
 }
 
 func parseModuleSourceRemote(raw string) (ModuleSourceRemote, error) {
-	var subDir string
-	raw, subDir = getmodules.SplitPackageSubdir(raw)
-	if strings.HasPrefix(subDir, "../") {
-		return ModuleSourceRemote{}, fmt.Errorf("subdirectory path %q leads outside of the module package", subDir)
-	}
-
-	// A remote source address is really just a go-getter address resulting
-	// from go-getter's "detect" phase, which adds on the prefix specifying
-	// which protocol it should use and possibly also adjusts the
-	// protocol-specific part into different syntax.
-	//
-	// Note that for historical reasons this can potentially do network
-	// requests in order to disambiguate certain address types, although
-	// that's a legacy thing that is only for some specific, less-commonly-used
-	// address types. Most just do local string manipulation. We should
-	// aim to remove the network requests over time, if possible.
-	norm, moreSubDir, err := getmodules.NormalizePackageAddress(raw)
-	if err != nil {
-		// We must pass through the returned error directly here because
-		// the getmodules package has some special error types it uses
-		// for certain cases where the UI layer might want to include a
-		// more helpful error message.
-		return ModuleSourceRemote{}, err
-	}
-
-	if moreSubDir != "" {
-		switch {
-		case subDir != "":
-			// The detector's own subdir goes first, because the
-			// subdir we were given is conceptually relative to
-			// the subdirectory that we just detected.
-			subDir = path.Join(moreSubDir, subDir)
-		default:
-			subDir = path.Clean(moreSubDir)
-		}
-		if strings.HasPrefix(subDir, "../") {
-			// This would suggest a bug in a go-getter detector, but
-			// we'll catch it anyway to avoid doing something confusing
-			// downstream.
-			return ModuleSourceRemote{}, fmt.Errorf("detected subdirectory path %q of %q leads outside of the module package", subDir, norm)
-		}
-	}
-
-	return ModuleSourceRemote{
-		Package: ModulePackage(norm),
-		Subdir:  subDir,
-	}, nil
+	return ModuleSourceRemote{}, nil
 }
 
 func (s ModuleSourceRemote) moduleSource() {}

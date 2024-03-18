@@ -1749,33 +1749,6 @@ func TestApply_terraformEnvNonDefault(t *testing.T) {
 	testCopyDir(t, testFixturePath("apply-terraform-env"), td)
 	defer testChdir(t, td)()
 
-	// Create new env
-	{
-		ui := new(cli.MockUi)
-		newCmd := &WorkspaceNewCommand{
-			Meta: Meta{
-				Ui: ui,
-			},
-		}
-		if code := newCmd.Run([]string{"test"}); code != 0 {
-			t.Fatal("error creating workspace")
-		}
-	}
-
-	// Switch to it
-	{
-		args := []string{"test"}
-		ui := new(cli.MockUi)
-		selCmd := &WorkspaceSelectCommand{
-			Meta: Meta{
-				Ui: ui,
-			},
-		}
-		if code := selCmd.Run(args); code != 0 {
-			t.Fatal("error switching workspace")
-		}
-	}
-
 	p := testProvider()
 	view, done := testView(t)
 	c := &ApplyCommand{
