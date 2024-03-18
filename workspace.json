@@ -1,6 +1,0 @@
-{
-    "id": "terraform",
-    "defaultBranch": "main",
-    "deployOptions": {
-    }
-}
