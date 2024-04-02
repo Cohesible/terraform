@@ -81,7 +81,7 @@ func TestJSONHook_create(t *testing.T) {
 	now = now.Add(2 * time.Second)
 	nowMu.Unlock()
 
-	action, err = hook.PostApply(addr, states.CurrentGen, plannedNewState, nil, nil)
+	action, err = hook.PostApply(addr, states.CurrentGen, plannedNewState, nil, nil, false)
 	testHookReturnValues(t, action, err)
 
 	// Shut down the progress goroutine if still active
@@ -212,7 +212,7 @@ func TestJSONHook_errors(t *testing.T) {
 	testHookReturnValues(t, action, err)
 
 	applyError := fmt.Errorf("provider was sad")
-	action, err = hook.PostApply(addr, states.CurrentGen, plannedNewState, applyError, nil)
+	action, err = hook.PostApply(addr, states.CurrentGen, plannedNewState, applyError, nil, false)
 	testHookReturnValues(t, action, err)
 
 	// Shut down the progress goroutine

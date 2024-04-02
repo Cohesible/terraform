@@ -305,6 +305,10 @@ func (n *NodeApplyableResourceInstance) managedResourceExecute(ctx EvalContext) 
 		// We previously cached the encoded "plan" state which we must now clear explictly
 		ctx.ClearCachedResource(n.Addr)
 
+		// Notify listeners that we skipped the apply
+		diags = diags.Append(n.postApplyHook(ctx, state, diags.Err(), nil, true))
+		log.Printf("[TRACE] managedResourceExecute: skipped applying %s", n.Addr)
+
 		return diags.Append(n.managedResourcePostconditions(ctx, repeatData))
 	}
 
@@ -376,7 +380,7 @@ func (n *NodeApplyableResourceInstance) managedResourceExecute(ctx EvalContext) 
 		}
 	}
 
-	diags = diags.Append(n.postApplyHook(ctx, state, diags.Err(), src))
+	diags = diags.Append(n.postApplyHook(ctx, state, diags.Err(), src, false))
 	diags = diags.Append(updateStateHook(ctx))
 
 	// Post-conditions might block further progress. We intentionally do this

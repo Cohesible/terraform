@@ -154,7 +154,7 @@ func (h *MockHook) PreApply(addr addrs.AbsResourceInstance, gen states.Generatio
 	return h.PreApplyReturn, h.PreApplyError
 }
 
-func (h *MockHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.Resource) (HookAction, error) {
+func (h *MockHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.Resource, skipped bool) (HookAction, error) {
 	h.Lock()
 	defer h.Unlock()
 

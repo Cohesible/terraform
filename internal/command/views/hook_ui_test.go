@@ -224,7 +224,7 @@ func TestUiHookPostApply_colorInterpolation(t *testing.T) {
 		"id": cty.StringVal("[blue]"),
 	})
 
-	action, err := h.PostApply(addr, states.CurrentGen, newState, nil, nil)
+	action, err := h.PostApply(addr, states.CurrentGen, newState, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestUiHookPostApply_emptyState(t *testing.T) {
 		"names": cty.List(cty.String),
 	}))
 
-	action, err := h.PostApply(addr, states.CurrentGen, newState, nil, nil)
+	action, err := h.PostApply(addr, states.CurrentGen, newState, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}

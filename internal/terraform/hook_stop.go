@@ -27,7 +27,7 @@ func (h *stopHook) PreApply(addr addrs.AbsResourceInstance, gen states.Generatio
 	return h.hook()
 }
 
-func (h *stopHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.Resource) (HookAction, error) {
+func (h *stopHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.Resource, skipped bool) (HookAction, error) {
 	return h.hook()
 }
 

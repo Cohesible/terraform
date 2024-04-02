@@ -297,17 +297,12 @@ func initCommands(
 
 	PrimaryCommands = []string{
 		"init",
-		"validate",
 		"plan",
 		"apply",
 		"destroy",
 	}
 
-	HiddenCommands = map[string]struct{}{
-		"env":             struct{}{},
-		"internal-plugin": struct{}{},
-		"push":            struct{}{},
-	}
+	HiddenCommands = map[string]struct{}{}
 
 }
 

@@ -59,7 +59,7 @@ func (h *countHook) PreApply(addr addrs.AbsResourceInstance, gen states.Generati
 	return terraform.HookActionContinue, nil
 }
 
-func (h *countHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.Resource) (terraform.HookAction, error) {
+func (h *countHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.Resource, skipped bool) (terraform.HookAction, error) {
 	h.Lock()
 	defer h.Unlock()
 

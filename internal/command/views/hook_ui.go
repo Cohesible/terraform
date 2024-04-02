@@ -184,7 +184,7 @@ func (h *UiHook) stillApplying(state uiResourceState) {
 	}
 }
 
-func (h *UiHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, applyerr error, src *states.Resource) (terraform.HookAction, error) {
+func (h *UiHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, applyerr error, src *states.Resource, skipped bool) (terraform.HookAction, error) {
 	id := addr.String()
 
 	h.resourcesLock.Lock()

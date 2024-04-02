@@ -44,7 +44,7 @@ func (h *testHook) PreApply(addr addrs.AbsResourceInstance, gen states.Generatio
 	return HookActionContinue, nil
 }
 
-func (h *testHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.Resource) (HookAction, error) {
+func (h *testHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.Resource, skipped bool) (HookAction, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.Calls = append(h.Calls, &testHookCall{"PostApply", addr.String()})

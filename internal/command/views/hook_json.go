@@ -100,7 +100,7 @@ func (h *jsonHook) applyingHeartbeat(progress applyProgress) {
 	}
 }
 
-func (h *jsonHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.Resource) (terraform.HookAction, error) {
+func (h *jsonHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generation, newState cty.Value, err error, src *states.Resource, skipped bool) (terraform.HookAction, error) {
 	key := addr.String()
 	h.applyingLock.Lock()
 	progress := h.applying[key]
@@ -111,6 +111,7 @@ func (h *jsonHook) PostApply(addr addrs.AbsResourceInstance, gen states.Generati
 	h.applyingLock.Unlock()
 
 	if progress.action == plans.NoOp {
+		h.view.Hook(json.NewApplyComplete(addr, plans.NoOp, "", "", time.Duration(0), nil))
 		return terraform.HookActionContinue, nil
 	}
 
