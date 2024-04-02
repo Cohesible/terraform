@@ -3,6 +3,7 @@ package synapse
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path"
 
@@ -301,8 +302,13 @@ func (p *SynapseProvider) ConfigureProvider(req providers.ConfigureProviderReque
 		return path.Join(workingDirectory, p)
 	}
 
+	// Can't remember why this client is used instead of the net/http one
+	var httpClient = httpclient.NewRetryableClient()
+	httpClient.RetryMax = 0
+	httpClient.ErrorHandler = maxRetryErrorHandler
+
 	client := ExampleClient{
-		HttpClient:       httpclient.NewRetryableClient(),
+		HttpClient:       httpClient,
 		Endpoint:         getEndpoint(config),
 		WorkingDirectory: workingDirectory,
 		OutputDirectory:  resolvePath(getStringValue(config, "outputDirectory")),
@@ -312,6 +318,29 @@ func (p *SynapseProvider) ConfigureProvider(req providers.ConfigureProviderReque
 	p.client = &client
 
 	return resp
+}
+
+func maxRetryErrorHandler(resp *http.Response, err error, numTries int) (*http.Response, error) {
+	if resp != nil {
+		resp.Body.Close()
+	}
+
+	var errMsg string
+	if resp != nil {
+		var requestId = resp.Header.Get("x-synapse-request-id")
+		if requestId != "" {
+			errMsg = fmt.Sprintf(": x-synapse-request-id: %s", requestId)
+		} else {
+			errMsg = fmt.Sprintf(": %s returned from local server", resp.Status)
+		}
+	} else if err != nil {
+		errMsg = fmt.Sprintf(": %s", err)
+	}
+
+	if numTries > 1 {
+		return resp, fmt.Errorf("request failed after %d attempts%s", numTries, errMsg)
+	}
+	return resp, fmt.Errorf("request failed%s", errMsg)
 }
 
 func getEndpoint(config cty.Value) string {
