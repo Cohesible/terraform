@@ -115,8 +115,8 @@ func (c *ApplyCommand) Run(rawArgs []string) int {
 	diags = diags.Append(c.GatherVariables(opReq, args.Vars))
 
 	isDestroy := c.Destroy || args.Operation.PlanMode == plans.DestroyMode
-	if len(opReq.Targets) == 0 && !isDestroy {
-		targets, targetsDiags := c.Meta.loadTargets(".")
+	if len(opReq.Targets) == 0 {
+		targets, targetsDiags := c.Meta.loadTargets(".", isDestroy)
 		diags = diags.Append(targetsDiags)
 		opReq.Targets = targets
 

@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform/internal/backend"
 	"github.com/hashicorp/terraform/internal/command/arguments"
 	"github.com/hashicorp/terraform/internal/command/views"
+	"github.com/hashicorp/terraform/internal/plans"
 	"github.com/hashicorp/terraform/internal/tfdiags"
 )
 
@@ -83,8 +84,9 @@ func (c *PlanCommand) Run(rawArgs []string) int {
 		return 1
 	}
 
+	isDestroy := args.Operation.PlanMode == plans.DestroyMode
 	if len(opReq.Targets) == 0 {
-		targets, targetsDiags := c.Meta.loadTargets(".")
+		targets, targetsDiags := c.Meta.loadTargets(".", isDestroy)
 		diags = diags.Append(targetsDiags)
 		opReq.Targets = targets
 	}

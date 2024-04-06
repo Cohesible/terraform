@@ -124,8 +124,9 @@ func (m *Meta) loadBackendConfig(rootDir string) (*configs.Backend, tfdiags.Diag
 	return mod.Backend, nil
 }
 
-func (m *Meta) shouldInclude(moduleName, testSuiteId, executionScope string) bool {
-	canInclude := (m.useTests && testSuiteId != "") || (!m.useTests && testSuiteId == "")
+func (m *Meta) shouldInclude(moduleName, testSuiteId, executionScope string, isDestroy bool) bool {
+	// Tests are always validate candidates for destruction when running `destroy`
+	canInclude := (m.useTests && testSuiteId != "") || (!m.useTests && (testSuiteId == "" || isDestroy))
 	if !canInclude {
 		return false
 	}
@@ -148,7 +149,7 @@ func (m *Meta) shouldInclude(moduleName, testSuiteId, executionScope string) boo
 	return false
 }
 
-func (m *Meta) loadTargets(rootDir string) ([]addrs.Targetable, tfdiags.Diagnostics) {
+func (m *Meta) loadTargets(rootDir string, isDestroy bool) ([]addrs.Targetable, tfdiags.Diagnostics) {
 	mod, diags := m.loadSingleModule(rootDir)
 	if diags.HasErrors() {
 		return nil, diags
@@ -172,7 +173,7 @@ func (m *Meta) loadTargets(rootDir string) ([]addrs.Targetable, tfdiags.Diagnost
 			executionScope = values.Get("execution-scope")
 		}
 
-		if m.shouldInclude(moduleName, testSuiteId, executionScope) {
+		if m.shouldInclude(moduleName, testSuiteId, executionScope, isDestroy) {
 			addr := r.Addr().Absolute(addrs.RootModuleInstance)
 			targets[addr.String()] = addr
 		}
