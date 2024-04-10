@@ -196,7 +196,7 @@ func (c *StartSessionCommand) handleInput(
 
 	isDestroy := opArgs.PlanMode == plans.DestroyMode
 	// TODO: if destroy _and_ `useTests` then we should only destroy test resources
-	if len(opReq.Targets) == 0 {
+	if len(opReq.Targets) == 0 && !(len(c.Meta.modules) == 0 && isDestroy) {
 		targets, targetsDiags := c.Meta.loadTargets(".", isDestroy)
 		diags = diags.Append(targetsDiags)
 		opReq.Targets = targets

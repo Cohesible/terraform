@@ -85,7 +85,7 @@ func (c *PlanCommand) Run(rawArgs []string) int {
 	}
 
 	isDestroy := args.Operation.PlanMode == plans.DestroyMode
-	if len(opReq.Targets) == 0 {
+	if len(opReq.Targets) == 0 && !(len(c.Meta.modules) == 0 && isDestroy) {
 		targets, targetsDiags := c.Meta.loadTargets(".", isDestroy)
 		diags = diags.Append(targetsDiags)
 		opReq.Targets = targets
