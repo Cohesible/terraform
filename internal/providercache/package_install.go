@@ -22,6 +22,7 @@ import (
 
 func installFromHTTPURL(ctx context.Context, meta getproviders.PackageMeta, targetDir string, allowedHashes []getproviders.Hash) (*getproviders.PackageAuthenticationResult, error) {
 	url := meta.Location.String()
+	evts := installerEventsForContext(ctx)
 
 	// When we're installing from an HTTP URL we expect the URL to refer to
 	// a zip file. We'll fetch that into a temporary file here and then
@@ -46,10 +47,12 @@ func installFromHTTPURL(ctx context.Context, meta getproviders.PackageMeta, targ
 		return nil, fmt.Errorf("%s: %w", getproviders.HostFromRequest(req), err)
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unsuccessful request to %s: %s", url, resp.Status)
 	}
+
+	size := int(resp.ContentLength)
+	evts.FetchPackageProgress(meta.Provider, meta.Version, size, 0, "downloading")
 
 	f, err := ioutil.TempFile("", "terraform-provider")
 	if err != nil {
@@ -58,7 +61,16 @@ func installFromHTTPURL(ctx context.Context, meta getproviders.PackageMeta, targ
 	defer f.Close()
 	defer os.Remove(f.Name())
 
-	n, err := io.Copy(f, resp.Body)
+	downloaded := 0
+	writer := progressWriter{
+		inner: f,
+		onWrite: func(n int) {
+			downloaded += n
+			evts.FetchPackageProgress(meta.Provider, meta.Version, size, downloaded, "downloading")
+		},
+	}
+
+	n, err := io.Copy(&writer, resp.Body)
 	if err == nil && n < resp.ContentLength {
 		err = fmt.Errorf("incorrect response size: expected %d bytes, but got %d bytes", resp.ContentLength, n)
 	}
@@ -71,6 +83,7 @@ func installFromHTTPURL(ctx context.Context, meta getproviders.PackageMeta, targ
 
 	var authResult *getproviders.PackageAuthenticationResult
 	if meta.Authentication != nil {
+		evts.FetchPackageProgress(meta.Provider, meta.Version, size, size, "verifying")
 		if authResult, err = meta.Authentication.AuthenticatePackage(localLocation); err != nil {
 			return authResult, err
 		}
@@ -90,10 +103,25 @@ func installFromHTTPURL(ctx context.Context, meta getproviders.PackageMeta, targ
 		Location:         localLocation,
 		Authentication:   nil,
 	}
+	evts.FetchPackageProgress(meta.Provider, meta.Version, size, size, "extracting")
 	if _, err := installFromLocalArchive(ctx, localMeta, targetDir, allowedHashes); err != nil {
 		return nil, err
 	}
+
+	evts.FetchPackageSuccess(meta.Provider, meta.Version, targetDir, authResult)
+
 	return authResult, nil
+}
+
+type progressWriter struct {
+	inner   io.Writer
+	onWrite func(numBytes int)
+}
+
+func (w *progressWriter) Write(p []byte) (n int, err error) {
+	w.onWrite(len(p))
+
+	return w.inner.Write(p)
 }
 
 func installFromLocalArchive(ctx context.Context, meta getproviders.PackageMeta, targetDir string, allowedHashes []getproviders.Hash) (*getproviders.PackageAuthenticationResult, error) {

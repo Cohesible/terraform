@@ -23,6 +23,10 @@ type stopHook struct {
 
 var _ Hook = (*stopHook)(nil)
 
+func (h *stopHook) InstallEvent(ev ProviderInstallEvent) (HookAction, error) {
+	return h.hook()
+}
+
 func (h *stopHook) PreApply(addr addrs.AbsResourceInstance, gen states.Generation, action plans.Action, priorState, plannedNewState cty.Value) (HookAction, error) {
 	return h.hook()
 }

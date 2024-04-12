@@ -24,6 +24,7 @@ const (
 	MessagePlan          MessageType = "plan"
 
 	// Hook-driven messages
+	MessageInstallProvider   MessageType = "install_provider"
 	MessageApplyStart        MessageType = "apply_start"
 	MessageApplyProgress     MessageType = "apply_progress"
 	MessageApplyComplete     MessageType = "apply_complete"

@@ -63,6 +63,10 @@ type applyProgress struct {
 	heartbeatDone chan struct{}
 }
 
+func (h *jsonHook) InstallEvent(ev terraform.ProviderInstallEvent) (terraform.HookAction, error) {
+	return terraform.HookActionContinue, nil
+}
+
 func (h *jsonHook) PreApply(addr addrs.AbsResourceInstance, gen states.Generation, action plans.Action, priorState, plannedNewState cty.Value) (terraform.HookAction, error) {
 	if action != plans.NoOp {
 		idKey, idValue := format.ObjectValueIDOrName(priorState)

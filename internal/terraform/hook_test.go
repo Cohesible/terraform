@@ -37,6 +37,10 @@ type testHookCall struct {
 	InstanceID string
 }
 
+func (h *testHook) InstallEvent(ev ProviderInstallEvent) (HookAction, error) {
+	return HookActionContinue, nil
+}
+
 func (h *testHook) PreApply(addr addrs.AbsResourceInstance, gen states.Generation, action plans.Action, priorState, plannedNewState cty.Value) (HookAction, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

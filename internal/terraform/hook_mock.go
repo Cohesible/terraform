@@ -141,6 +141,10 @@ type MockHook struct {
 
 var _ Hook = (*MockHook)(nil)
 
+func (*MockHook) InstallEvent(ev ProviderInstallEvent) (HookAction, error) {
+	return HookActionContinue, nil
+}
+
 func (h *MockHook) PreApply(addr addrs.AbsResourceInstance, gen states.Generation, action plans.Action, priorState, plannedNewState cty.Value) (HookAction, error) {
 	h.Lock()
 	defer h.Unlock()

@@ -104,10 +104,11 @@ type InstallerEvents struct {
 	//
 	// The Query, Begin, Success, and Failure events will each occur only once
 	// per distinct provider.
-	FetchPackageMeta    func(provider addrs.Provider, version getproviders.Version) // fetching metadata prior to real download
-	FetchPackageBegin   func(provider addrs.Provider, version getproviders.Version, location getproviders.PackageLocation)
-	FetchPackageSuccess func(provider addrs.Provider, version getproviders.Version, localDir string, authResult *getproviders.PackageAuthenticationResult)
-	FetchPackageFailure func(provider addrs.Provider, version getproviders.Version, err error)
+	FetchPackageMeta     func(provider addrs.Provider, version getproviders.Version) // fetching metadata prior to real download
+	FetchPackageBegin    func(provider addrs.Provider, version getproviders.Version, location getproviders.PackageLocation)
+	FetchPackageSuccess  func(provider addrs.Provider, version getproviders.Version, localDir string, authResult *getproviders.PackageAuthenticationResult)
+	FetchPackageFailure  func(provider addrs.Provider, version getproviders.Version, err error)
+	FetchPackageProgress func(provider addrs.Provider, version getproviders.Version, size, downloaded int, phase string)
 
 	// The ProvidersLockUpdated event is called whenever the lock file will be
 	// updated. It provides the following information:

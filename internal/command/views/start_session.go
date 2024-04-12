@@ -6,6 +6,7 @@ package views
 import (
 	jsonencoding "encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/command/arguments"
@@ -49,6 +50,14 @@ func NewStartSession(vt arguments.ViewType, view *View) StartSession {
 		}
 	default:
 		panic(fmt.Sprintf("unknown view type %v", vt))
+	}
+}
+
+func NewStartSessionJSON(view *View) *StartSessionJSON {
+	return &StartSessionJSON{
+		view:       NewJSONView(view),
+		countHook:  &countHook{},
+		installing: map[string]*installProgress{},
 	}
 }
 
@@ -135,6 +144,8 @@ type StartSessionJSON struct {
 	view *JSONView
 
 	countHook *countHook
+
+	installing map[string]*installProgress
 }
 
 var _ StartSession = (*StartSessionJSON)(nil)
@@ -260,6 +271,45 @@ func (v *StartSessionJSON) PrintRefs(refs map[string][]*addrs.Reference) error {
 	}
 
 	v.view.Result(bytes)
+
+	return nil
+}
+
+type installProgress struct {
+	start   time.Time
+	counter int64
+}
+
+const maxEventsPerSecond = 20
+const millisecondsPerEvent = 1000 / maxEventsPerSecond
+
+func (v *StartSessionJSON) InstallEvent(ev terraform.ProviderInstallEvent) error {
+	if ev.Error != "" || ev.Phase != "downloading" {
+		delete(v.installing, ev.Address)
+		v.view.Hook(json.NewInstallProvider(ev))
+		return nil
+	}
+
+	var p *installProgress
+	if a, exists := v.installing[ev.Address]; exists {
+		p = a
+	} else {
+		p = &installProgress{
+			start:   time.Now(),
+			counter: 0,
+		}
+		v.installing[ev.Address] = p
+	}
+
+	now := time.Now()
+	delta := now.UnixMilli() - p.start.UnixMilli()
+	p.start = now
+	p.counter += delta
+
+	if p.counter >= millisecondsPerEvent {
+		p.counter -= millisecondsPerEvent
+		v.view.Hook(json.NewInstallProvider(ev))
+	}
 
 	return nil
 }

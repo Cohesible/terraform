@@ -20,6 +20,7 @@ import (
 	"github.com/hashicorp/terraform/internal/backend"
 	backendInit "github.com/hashicorp/terraform/internal/backend/init"
 	"github.com/hashicorp/terraform/internal/command/arguments"
+	"github.com/hashicorp/terraform/internal/command/views"
 	"github.com/hashicorp/terraform/internal/configs"
 	"github.com/hashicorp/terraform/internal/configs/configschema"
 	"github.com/hashicorp/terraform/internal/getproviders"
@@ -744,6 +745,8 @@ func (c *InitCommand) getProviders(config *configs.Config, state *states.State, 
 	ctx, done := c.InterruptibleContext()
 	defer done()
 
+	view := views.NewStartSessionJSON(c.View)
+
 	// We want to print out a nice warning if we don't manage to pull
 	// checksums for all our providers. This is tracked via callbacks
 	// and incomplete providers are stored here for later analysis.
@@ -756,9 +759,28 @@ func (c *InitCommand) getProviders(config *configs.Config, state *states.State, 
 	// are shimming our vt100 output to the legacy console API on Windows.
 	evts := &providercache.InstallerEvents{
 		PendingProviders: func(reqs map[addrs.Provider]getproviders.VersionConstraints) {
-
+			// for provider, _ := range reqs {
+			// 	c.uiHook().InstallEvent(terraform.ProviderInstallEvent{
+			// 		Name: provider.Type,
+			// 	})
+			// }
+		},
+		FetchPackageProgress: func(provider addrs.Provider, version getproviders.Version, size, downloaded int, phase string) {
+			view.InstallEvent(terraform.ProviderInstallEvent{
+				Address:    provider.String(),
+				Name:       provider.Type,
+				Version:    version.String(),
+				Size:       size,
+				Downloaded: downloaded,
+				Phase:      phase,
+			})
 		},
 		ProviderAlreadyInstalled: func(provider addrs.Provider, selectedVersion getproviders.Version) {
+			// c.uiHook().InstallEvent(terraform.ProviderInstallEvent{
+			// 	Name:      provider.Type,
+			// 	Version:   selectedVersion.String(),
+			// 	Completed: true,
+			// })
 			//c.Ui.Info(fmt.Sprintf("- Using previously-installed %s v%s", provider.ForDisplay(), selectedVersion))
 		},
 		BuiltInProviderAvailable: func(provider addrs.Provider) {
@@ -786,6 +808,12 @@ func (c *InitCommand) getProviders(config *configs.Config, state *states.State, 
 			// c.Ui.Info(fmt.Sprintf("- Using %s v%s from the shared cache directory", provider.ForDisplay(), version))
 		},
 		FetchPackageBegin: func(provider addrs.Provider, version getproviders.Version, location getproviders.PackageLocation) {
+			view.InstallEvent(terraform.ProviderInstallEvent{
+				Address: provider.String(),
+				Name:    provider.Type,
+				Version: version.String(),
+				Phase:   "downloading",
+			})
 			// c.Ui.Info(fmt.Sprintf("- Installing %s v%s...", provider.ForDisplay(), version))
 		},
 		QueryPackagesFailure: func(provider addrs.Provider, err error) {
@@ -976,16 +1004,28 @@ func (c *InitCommand) getProviders(config *configs.Config, state *states.State, 
 					fmt.Sprintf("Error while installing %s v%s: %s", provider.ForDisplay(), version, err),
 				))
 			}
+
+			view.InstallEvent(terraform.ProviderInstallEvent{
+				Address: provider.String(),
+				Name:    provider.Type,
+				Version: version.String(),
+				Error:   diags[len(diags)-1].Description().Detail,
+			})
 		},
 		FetchPackageSuccess: func(provider addrs.Provider, version getproviders.Version, localDir string, authResult *getproviders.PackageAuthenticationResult) {
-			var keyID string
-			if authResult != nil && authResult.ThirdPartySigned() {
-				keyID = authResult.KeyID
-			}
-			if keyID != "" {
-				keyID = c.Colorize().Color(fmt.Sprintf(", key ID [reset][bold]%s[reset]", keyID))
-			}
-
+			// var keyID string
+			// if authResult != nil && authResult.ThirdPartySigned() {
+			// 	keyID = authResult.KeyID
+			// }
+			// if keyID != "" {
+			// 	keyID = c.Colorize().Color(fmt.Sprintf(", key ID [reset][bold]%s[reset]", keyID))
+			// }
+			view.InstallEvent(terraform.ProviderInstallEvent{
+				Address: provider.String(),
+				Name:    provider.Type,
+				Version: version.String(),
+				Phase:   "complete",
+			})
 			// c.Ui.Info(fmt.Sprintf("- Installed %s v%s (%s%s)", provider.ForDisplay(), version, authResult, keyID))
 		},
 		ProvidersLockUpdated: func(provider addrs.Provider, version getproviders.Version, localHashes []getproviders.Hash, signedHashes []getproviders.Hash, priorHashes []getproviders.Hash) {

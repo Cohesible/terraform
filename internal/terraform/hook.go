@@ -25,6 +25,16 @@ const (
 	HookActionHalt
 )
 
+type ProviderInstallEvent struct {
+	Address    string `json:"address"`
+	Name       string `json:"name"`
+	Version    string `json:"version"`
+	Size       int    `json:"size,omitempty"`
+	Downloaded int    `json:"downloaded,omitempty"`
+	Phase      string `json:"phase,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
 // Hook is the interface that must be implemented to hook into various
 // parts of Terraform, allowing you to inspect or change behavior at runtime.
 //
@@ -33,6 +43,8 @@ const (
 // NilHook into your struct, which implements all of the interface but does
 // nothing. Then, override only the functions you want to implement.
 type Hook interface {
+	InstallEvent(ev ProviderInstallEvent) (HookAction, error)
+
 	// PreApply and PostApply are called before and after an action for a
 	// single instance is applied. The error argument in PostApply is the
 	// error, if any, that was returned from the provider Apply call itself.
@@ -120,6 +132,10 @@ type NilHook struct{}
 var _ Hook = (*NilHook)(nil)
 
 func (*NilHook) PreApply(addr addrs.AbsResourceInstance, gen states.Generation, action plans.Action, priorState, plannedNewState cty.Value) (HookAction, error) {
+	return HookActionContinue, nil
+}
+
+func (*NilHook) InstallEvent(ev ProviderInstallEvent) (HookAction, error) {
 	return HookActionContinue, nil
 }
 

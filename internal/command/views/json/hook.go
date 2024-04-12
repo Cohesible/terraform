@@ -10,6 +10,7 @@ import (
 
 	"github.com/hashicorp/terraform/internal/addrs"
 	"github.com/hashicorp/terraform/internal/plans"
+	"github.com/hashicorp/terraform/internal/terraform"
 )
 
 type Hook interface {
@@ -381,4 +382,24 @@ func actionNoun(action plans.Action) string {
 	default:
 		return "Apply"
 	}
+}
+
+type installProvider struct {
+	terraform.ProviderInstallEvent
+}
+
+func NewInstallProvider(ev terraform.ProviderInstallEvent) Hook {
+	hook := &installProvider{ProviderInstallEvent: ev}
+
+	return hook
+}
+
+var _ Hook = (*installProvider)(nil)
+
+func (h *installProvider) HookType() MessageType {
+	return MessageInstallProvider
+}
+
+func (h *installProvider) String() string {
+	return ""
 }
