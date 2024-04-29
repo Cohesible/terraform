@@ -151,10 +151,8 @@ func (t *DiffTransformer) Transform(g *Graph) error {
 
 			endpointAttr, exists := attrs["endpoint"]
 			if !exists {
-				return nil, append(diags, &hcl.Diagnostic{
-					Severity: hcl.DiagError,
-					Summary:  fmt.Sprintf("Missing endpoint in synapse provider config"),
-				})
+				nodes := []*graphNodeLifeCycleHook{}
+				return nodes, nil
 			}
 
 			endpoint, moreDiags := configs.DecodeAsString(endpointAttr)
