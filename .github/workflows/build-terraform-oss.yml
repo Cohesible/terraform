@@ -51,21 +51,9 @@ jobs:
           GO_LDFLAGS: ${{ inputs.ld-flags }}
           ACTIONSOS: ${{ inputs.runson }}
           CGO_ENABLED: ${{ inputs.cgo-enabled }}
-        uses: hashicorp/actions-go-build@v0.1.7
-        with:
-          product_name: ${{ inputs.package-name }}
-          product_version: ${{ inputs.product-version }}
-          go_version: ${{ inputs.go-version }}
-          os: ${{ inputs.goos }}
-          arch: ${{ inputs.goarch }}
-          reproducible: nope
-          instructions: |-
-            mkdir dist out
-            set -x
-            go build -ldflags "${{ inputs.ld-flags }}" -o dist/ .
-            zip -r -j out/${{ env.ARTIFACT_BASENAME }} dist/
+        run: mkdir dist && go build -ldflags "${{ inputs.ld-flags }}" -o dist/ .
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ env.ARTIFACT_BASENAME }}
-          path: out/${{ env.ARTIFACT_BASENAME }}
+          path: dist/
           if-no-files-found: error
