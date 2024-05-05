@@ -43,7 +43,7 @@ jobs:
         with:
           go-version: ${{ inputs.go-version }}
       - name: Determine artifact basename
-        run: echo "ARTIFACT_BASENAME=${{ inputs.package-name }}-${{ inputs.product-version }}-${{ inputs.goos }}-${{ inputs.goarch }}.zip" >> $GITHUB_ENV
+        run: echo "ARTIFACT_BASENAME=${{ inputs.package-name }}-${{ inputs.product-version }}-${{ inputs.goos }}-${{ inputs.goarch }}" >> $GITHUB_ENV
       - name: Build Terraform
         env:
           GOOS: ${{ inputs.goos }}
