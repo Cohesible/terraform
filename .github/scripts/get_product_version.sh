@@ -16,27 +16,13 @@ IFS='+' read -ra VERSION BUILD_META <<< "$VERSION"
 # (version.go expects it to be in a separate variable)
 IFS='-' read -r BASE_VERSION PRERELEASE <<< "$VERSION"
 
-EXPERIMENTS_ENABLED=0
-if [[ "$PRERELEASE" == alpha* ]]; then
-EXPERIMENTS_ENABLED=1
-fi
-if [[ "$PRERELEASE" == dev* ]]; then
-EXPERIMENTS_ENABLED=1
-fi
-
 LDFLAGS="-w -s"
-if [[ "$EXPERIMENTS_ENABLED" == 1 ]]; then
-LDFLAGS="${LDFLAGS} -X 'main.experimentsAllowed=yes'"
-fi
+
 LDFLAGS="${LDFLAGS} -X 'github.com/hashicorp/terraform/version.Version=${BASE_VERSION}'"
 LDFLAGS="${LDFLAGS} -X 'github.com/hashicorp/terraform/version.Prerelease=${PRERELEASE}'"
 
 echo "Building Terraform CLI ${VERSION}"
-if [[ "$EXPERIMENTS_ENABLED" == 1 ]]; then
-echo "This build allows use of experimental features"
-fi
 echo "product-version=${VERSION}" | tee -a "${GITHUB_OUTPUT}"
 echo "product-version-base=${BASE_VERSION}" | tee -a "${GITHUB_OUTPUT}"
 echo "product-version-pre=${PRERELEASE}" | tee -a "${GITHUB_OUTPUT}"
-echo "experiments=${EXPERIMENTS_ENABLED}" | tee -a "${GITHUB_OUTPUT}"
 echo "go-ldflags=${LDFLAGS}" | tee -a "${GITHUB_OUTPUT}"
