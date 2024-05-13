@@ -326,9 +326,11 @@ func (c *Config) Validate() tfdiags.Diagnostics {
 	if c.PluginCacheDir != "" {
 		_, err := os.Stat(c.PluginCacheDir)
 		if err != nil {
-			diags = diags.Append(
-				fmt.Errorf("The specified plugin cache dir %s cannot be opened: %s", c.PluginCacheDir, err),
-			)
+			if !strings.HasSuffix(err.Error(), "no such file or directory") {
+				diags = diags.Append(
+					fmt.Errorf("The specified plugin cache dir %s cannot be opened: %s", c.PluginCacheDir, err),
+				)
+			}
 		}
 	}
 

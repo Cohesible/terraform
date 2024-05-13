@@ -243,8 +243,8 @@ func getProviderSchema() providers.Schema {
 			Attributes: map[string]*configschema.Attribute{
 				"endpoint":         {Type: cty.String},
 				"workingDirectory": {Type: cty.String},
-				"outputDirectory":  {Type: cty.String, Required: true},
-				"buildDirectory":   {Type: cty.String, Required: true},
+				"outputDirectory":  {Type: cty.String},
+				"buildDirectory":   {Type: cty.String},
 			},
 		},
 	}
@@ -302,6 +302,14 @@ func (p *SynapseProvider) ConfigureProvider(req providers.ConfigureProviderReque
 		return path.Join(workingDirectory, p)
 	}
 
+	getValue := func(name, envVar string) string {
+		if val, exists := os.LookupEnv(envVar); exists {
+			return val
+		}
+
+		return resolvePath(getStringValue(config, name))
+	}
+
 	// Can't remember why this client is used instead of the net/http one
 	var httpClient = httpclient.NewRetryableClient()
 	httpClient.RetryMax = 0
@@ -311,8 +319,8 @@ func (p *SynapseProvider) ConfigureProvider(req providers.ConfigureProviderReque
 		HttpClient:       httpClient,
 		Endpoint:         getEndpoint(config),
 		WorkingDirectory: workingDirectory,
-		OutputDirectory:  resolvePath(getStringValue(config, "outputDirectory")),
-		BuildDirectory:   resolvePath(getStringValue(config, "buildDirectory")),
+		OutputDirectory:  getValue("outputDirectory", "TF_SYNAPSE_PROVIDER_OUTPUT_DIR"),
+		BuildDirectory:   getValue("buildDirectory", "TF_SYNAPSE_PROVIDER_BUILD_DIR"),
 	}
 
 	p.client = &client

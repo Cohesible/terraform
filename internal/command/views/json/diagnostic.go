@@ -405,6 +405,10 @@ func compactValueStr(val cty.Value) string {
 		return "(sensitive value)"
 	}
 
+	if val.IsMarked() {
+		val, _ = val.Unmark()
+	}
+
 	// WARNING: We've only checked that the value isn't sensitive _shallowly_
 	// here, and so we must never show any element values from complex types
 	// in here. However, it's fine to show map keys and attribute names because
