@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/terraform-svchost/disco"
 	"github.com/hashicorp/terraform/internal/addrs"
+	commands "github.com/hashicorp/terraform/internal/command"
 	"github.com/hashicorp/terraform/internal/command/cliconfig"
 	"github.com/hashicorp/terraform/internal/command/format"
 	"github.com/hashicorp/terraform/internal/didyoumean"
@@ -66,6 +67,20 @@ func realMain() int {
 	defer logging.PanicHandler()
 
 	var err error
+
+	// Get the command line args.
+	binName := filepath.Base(os.Args[0])
+	args := os.Args[1:]
+
+	if len(args) > 0 && args[0] == "zip" {
+		err = commands.CreateZipFromStdin()
+		if err == nil {
+			return 0
+		}
+		os.Stdout.WriteString(err.Error())
+		os.Stdout.WriteString("\n")
+		return 1
+	}
 
 	tmpLogPath := os.Getenv(envTmpLogPath)
 	if tmpLogPath != "" {
@@ -189,10 +204,6 @@ func realMain() int {
 
 	// Initialize the backends.
 	backendInit.Init(services)
-
-	// Get the command line args.
-	binName := filepath.Base(os.Args[0])
-	args := os.Args[1:]
 
 	for i, arg := range args {
 		if arg == "-cpu-profile" {
