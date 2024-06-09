@@ -308,9 +308,10 @@ func installFromLocalDir(ctx context.Context, meta getproviders.PackageMeta, tar
 	// If we get down here then symlinking failed and we need a deep copy
 	// instead. To make a copy, we first need to create the target directory,
 	// which would otherwise be a symlink.
+	symlinkErr := err
 	err = os.Mkdir(absNew, 0755)
 	if err != nil && os.IsExist(err) {
-		return nil, fmt.Errorf("failed to create directory %s: %s", absNew, err)
+		return nil, fmt.Errorf("failed to create directory %s: %s (symlink err: %s)", absNew, err, symlinkErr)
 	}
 	err = copy.CopyDir(absNew, absCurrent)
 	if err != nil {
