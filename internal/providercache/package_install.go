@@ -300,7 +300,9 @@ func installFromLocalDir(ctx context.Context, meta getproviders.PackageMeta, tar
 	}
 
 	err = os.Symlink(linkTarget, absNew)
-	if err == nil {
+
+	// TODO: determine why we sometimes see "fileexists" in CI
+	if err == nil || os.IsExist(err) {
 		// Success, then!
 		return nil, nil
 	}
