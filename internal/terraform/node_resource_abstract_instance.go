@@ -672,6 +672,91 @@ func (n *NodeAbstractResourceInstance) refresh(ctx EvalContext, deposedKey state
 	return ret, diags
 }
 
+func resolvePointer(pointer cty.Value) (cty.Value, error) {
+	if pointer.Type() != cty.String {
+		return cty.NilVal, fmt.Errorf("expected string type, got: %s", pointer.Type())
+	}
+
+	str := pointer.AsString()
+	if strings.HasPrefix(str, "data/") {
+		return pointer, nil
+	}
+
+	resolved := "data/" + str[0:2] + "/" + str[2:4] + "/" + str[4:]
+
+	return cty.StringVal(resolved), nil
+}
+
+func replaceValue(root cty.Value, k cty.Path, v cty.Value) (cty.Value, error) {
+	o, s, err := k.LastStep(root)
+	if err != nil {
+		return cty.NilVal, err
+	}
+	if s == nil {
+		return v, nil
+	}
+
+	var next cty.Value
+	switch tStep := s.(type) {
+	case cty.GetAttrStep:
+		x := o.AsValueMap()
+		x[tStep.Name] = v
+		if o.Type().IsObjectType() {
+			next = cty.ObjectVal(x)
+		} else {
+			next = cty.MapVal(x)
+		}
+	case cty.IndexStep:
+		if tStep.Key.Type() == cty.Number {
+			z, _ := tStep.Key.AsBigFloat().Int64()
+			x := o.AsValueSlice()
+			x[z] = v
+
+			if o.Type().IsSetType() {
+				next = cty.SetVal(x)
+			} else if o.Type().IsListType() {
+				next = cty.ListVal(x)
+			} else {
+				next = cty.TupleVal(x)
+			}
+		}
+	}
+
+	return replaceValue(root, k[:len(k)-1], next)
+}
+
+// TODO: current impl. is inefficient when resolving more than 1 pointer
+func ResolvePointers(paths []cty.PathValueMarks, value cty.Value) (cty.Value, error) {
+	for _, p := range paths {
+		for k := range p.Marks {
+			switch k.(type) {
+			case marks.DataPointerAnnotation:
+				o, s, err := p.Path.LastStep(value)
+				if err != nil {
+					return cty.NilVal, err
+				}
+				pointer, err := s.Apply(o)
+				if err != nil {
+					return cty.NilVal, err
+				}
+
+				resolved, err := resolvePointer(pointer)
+				if err != nil {
+					return cty.NilVal, err
+				}
+
+				v, err := replaceValue(value, p.Path, resolved)
+				if err != nil {
+					return cty.NilVal, err
+				}
+				value = v
+			}
+		}
+	}
+
+	return value, nil
+}
+
 func (n *NodeAbstractResourceInstance) plan(
 	ctx EvalContext,
 	plannedChange *plans.ResourceInstanceChange,
@@ -824,6 +909,20 @@ func (n *NodeAbstractResourceInstance) plan(
 	// over the wire.
 	unmarkedConfigVal, unmarkedPaths := configValIgnored.UnmarkDeepWithPaths()
 	unmarkedPriorVal, priorPaths := priorVal.UnmarkDeepWithPaths()
+
+	if n.ResolvedProvider.Provider.Type != "synapse" {
+		unmarkedConfigVal, err = ResolvePointers(unmarkedPaths, unmarkedConfigVal)
+		if err != nil {
+			diags = diags.Append(err)
+		}
+		unmarkedPriorVal, err = ResolvePointers(priorPaths, unmarkedPriorVal)
+		if err != nil {
+			diags = diags.Append(err)
+		}
+		if diags.HasErrors() {
+			return nil, nil, keyData, diags
+		}
+	}
 
 	proposedNewVal := objchange.ProposedNew(schema, unmarkedPriorVal, unmarkedConfigVal)
 
@@ -1135,6 +1234,12 @@ func (n *NodeAbstractResourceInstance) plan(
 	// ignored here to prevent an errant update action.
 	if action == plans.NoOp && !marksEqualByTarget(validateMarks(plannedNewVal, unmarkedPaths), priorPaths, marks.Sensitive) {
 		action = plans.Update
+	}
+
+	// We need to add back in the paths from the old state for a NoOp
+	// This is only relevant when making multiple applies in a single session e.g. `synapse watch`
+	if action == plans.NoOp && len(priorPaths) > 0 {
+		plannedNewVal = plannedNewVal.MarkWithPaths(priorPaths)
 	}
 
 	// As a special case, if we have a previous diff (presumably from the plan
@@ -1487,16 +1592,19 @@ func (n *NodeAbstractResourceInstance) readDataSource(ctx EvalContext, configVal
 		}
 	}
 
-	log.Printf("[TRACE] readDataSource: Re-validating config for %s", n.Addr)
-	validateResp := provider.ValidateDataResourceConfig(
-		providers.ValidateDataResourceConfigRequest{
-			TypeName: n.Addr.ContainingResource().Resource.Type,
-			Config:   configVal,
-		},
-	)
-	diags = diags.Append(validateResp.Diagnostics.InConfigBody(config.Config, n.Addr.String()))
-	if diags.HasErrors() {
-		return newVal, diags
+	// Do not validate configs from builtin resources
+	if n.ResolvedProvider.Provider.Type != "synapse" {
+		log.Printf("[TRACE] readDataSource: Re-validating config for %s", n.Addr)
+		validateResp := provider.ValidateDataResourceConfig(
+			providers.ValidateDataResourceConfigRequest{
+				TypeName: n.Addr.ContainingResource().Resource.Type,
+				Config:   configVal,
+			},
+		)
+		diags = diags.Append(validateResp.Diagnostics.InConfigBody(config.Config, n.Addr.String()))
+		if diags.HasErrors() {
+			return newVal, diags
+		}
 	}
 
 	// If we get down here then our configuration is complete and we're read
