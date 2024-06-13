@@ -673,6 +673,10 @@ func (n *NodeAbstractResourceInstance) refresh(ctx EvalContext, deposedKey state
 }
 
 func resolvePointer(pointer cty.Value) (cty.Value, error) {
+	if pointer == cty.DynamicVal {
+		return pointer, nil
+	}
+
 	if pointer.Type() != cty.String {
 		return cty.NilVal, fmt.Errorf("expected string type, got: %s", pointer.Type())
 	}
