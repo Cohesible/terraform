@@ -1,4 +1,25 @@
-# Terraform
+# Terraform (Used in [Synapse](https://github.com/Cohesible/synapse))
+
+**This fork uses v1.5.5 of Terraform**
+
+With the exception of critical security-related issues, no code will be upstreamed. 
+
+Eventually this will be renamed to something else to reflect its relationship with Synapse.
+
+### Why a fork?
+
+The Terraform CLI and HCL syntax are meant for **humans**. But the way Synapse uses Terraform is far more mechanical. 
+
+Many of the user-facing features get in the way. Which leads to hacks, worse performance, and more complexity. Forking enables a fine-tuned solution just for Synapse.
+
+Synapse benefits from Terraform in two main ways:
+* **Compatibility with the Terraform provider ecosystem**
+* Reasonably performant engine for executing resource configurations
+
+Everything else is unnecessary and will be stripped away over time.
+
+
+## Original README
 
 - Website: https://www.terraform.io
 - Forums: [HashiCorp Discuss](https://discuss.hashicorp.com/c/terraform-core)
